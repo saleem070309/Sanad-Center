@@ -153,18 +153,29 @@ function renderCategories() {
     `).join('');
 }
 
+function getDriveVideoUrl(url) {
+    if (!url) return 'assets/videos/demo.mp4';
+    const trimmed = url.trim();
+    const match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (match) return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+    const match2 = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (match2) return `https://drive.google.com/uc?export=download&id=${match2[1]}`;
+    return trimmed;
+}
+
 function renderHeroSlider() {
     const wrapper = document.getElementById('carouselWrapper');
     const dotsContainer = document.getElementById('carouselDots');
     if (!wrapper || !dotsContainer) return;
 
     const sliderProducts = allProducts.filter(p => p.inSlider);
+    const videoUrl = getDriveVideoUrl(allSettings.hero_video || 'https://drive.google.com/file/d/11bBc51ATzCyDh1Wi7ArMThaKikcz-aLh/view?usp=sharing');
     
     // Initial Video Slide (Slide 0)
     let wrapperHTML = `
         <div class="carousel-slide min-w-full h-full relative" data-slide="0">
             <video id="carouselVideo" class="w-full h-full object-cover" playsinline muted autoplay loop>
-                <source src="assets/videos/demo.mp4" type="video/mp4">
+                <source src="${videoUrl}" type="video/mp4">
             </video>
             <div class="absolute inset-0 bg-black/20 pointer-events-none"></div>
             <div class="absolute bottom-0 right-0 p-8 text-white text-right max-w-lg pointer-events-none">

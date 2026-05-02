@@ -376,10 +376,12 @@ function renderSettingsPage() {
   const phoneInput = document.getElementById('set-phone');
   const fbInput = document.getElementById('set-fb');
   const fbNameInput = document.getElementById('set-fb-name');
+  const videoInput = document.getElementById('set-video');
 
   if (phoneInput) phoneInput.value = allSettings.phone || '';
   if (fbInput) fbInput.value = allSettings.facebook || '';
   if (fbNameInput) fbNameInput.value = allSettings.facebook_name || '';
+  if (videoInput) videoInput.value = allSettings.hero_video || '';
 }
 
 function populateCategorySelects() {
@@ -645,7 +647,8 @@ function setupEventListeners() {
           settings: {
             phone: document.getElementById('set-phone').value,
             facebook: document.getElementById('set-fb').value,
-            facebook_name: document.getElementById('set-fb-name').value
+            facebook_name: document.getElementById('set-fb-name').value,
+            hero_video: document.getElementById('set-video').value
           }
         };
         const res = await fetch(API_URL, {

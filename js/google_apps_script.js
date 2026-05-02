@@ -73,7 +73,7 @@ function setupSheets() {
   const settingsHeaders = ['المفتاح', 'القيمة'];
   settingsSheet.getRange(1, 1, 1, settingsHeaders.length).setValues([settingsHeaders]);
   if (settingsSheet.getLastRow() === 1) {
-    settingsSheet.appendRow(['phone', '+962788144210']);
+    settingsSheet.appendRow(['phone', '0777349014']);
     settingsSheet.appendRow(['facebook', 'https://web.facebook.com/profile.php?id=61583604596426']);
     settingsSheet.appendRow(['facebook_name', 'Sanad Center Jordan']);
   }
