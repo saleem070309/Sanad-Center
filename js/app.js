@@ -624,7 +624,7 @@ async function submitOrderToSheet() {
             localStorage.setItem(PROFILE_KEY, JSON.stringify({ name, phone }));
             
             // Redirect to WhatsApp
-            const storePhone = (allSettings.phone || '+962788144210').replace(/\s+/g, '').replace('+', '').replace(/^00/, '');
+            const storePhone = (allSettings.phone || '0777349014').replace(/\s+/g, '').replace('+', '').replace(/^00/, '');
             let cleanStorePhone = storePhone;
             if (cleanStorePhone.startsWith('0') && cleanStorePhone.length === 10) {
                 cleanStorePhone = '962' + cleanStorePhone.substring(1);
