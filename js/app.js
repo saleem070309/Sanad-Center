@@ -14,6 +14,11 @@ const STORAGE_KEYS = {
 let allProducts = JSON.parse(localStorage.getItem(STORAGE_KEYS.PRODUCTS) || '[]');
 let allCategories = JSON.parse(localStorage.getItem(STORAGE_KEYS.CATEGORIES) || '[]');
 let allSettings = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || '{}');
+
+// Call applySettings immediately to use cached values
+document.addEventListener('DOMContentLoaded', () => {
+    applySettings();
+});
 let cart = JSON.parse(localStorage.getItem(STORAGE_KEYS.CART) || '[]');
 let favorites = JSON.parse(localStorage.getItem(STORAGE_KEYS.FAVORITES) || '[]');
 let currentPage = 'page_0';
@@ -35,9 +40,9 @@ async function fetchData() {
 
     try {
         const [prodRes, catRes, setRes] = await Promise.all([
-            fetch(`${API_URL}?action=getProducts`),
-            fetch(`${API_URL}?action=getCategories`),
-            fetch(`${API_URL}?action=getSettings`)
+            fetch(`${API_URL}?action=getProducts&_=${Date.now()}`),
+            fetch(`${API_URL}?action=getCategories&_=${Date.now()}`),
+            fetch(`${API_URL}?action=getSettings&_=${Date.now()}`)
         ]);
 
         const prodData = await prodRes.json();
@@ -71,23 +76,42 @@ async function fetchData() {
 }
 
 function applySettings() {
+    // Normalize keys to lowercase for safety
+    const settings = {};
+    for (let key in allSettings) {
+        settings[key.toLowerCase()] = allSettings[key];
+    }
+
     // WhatsApp
     const waLink = document.getElementById('footer-wa-link');
     const waText = document.getElementById('footer-wa-text');
-    if (allSettings.phone) {
-        const cleanPhone = allSettings.phone.replace(/\s+/g, '').replace('+', '');
-        if (waLink) waLink.href = `https://wa.me/${cleanPhone}`;
-        if (waText) waText.textContent = allSettings.phone;
+    const phone = settings.phone || settings['رقم الهاتف'];
+    if (phone) {
+        let cleanPhone = String(phone).replace(/\s+/g, '').replace('+', '').replace(/^00/, '');
+        // If it starts with 0 and is 10 digits, it's likely a local Jordanian number
+        if (cleanPhone.startsWith('0') && cleanPhone.length === 10) {
+            cleanPhone = '962' + cleanPhone.substring(1);
+        }
+        // If it's 9 digits and doesn't have a country code, prepend 962
+        if (cleanPhone.length === 9 && !cleanPhone.startsWith('962')) {
+            cleanPhone = '962' + cleanPhone;
+        }
+        
+        if (waLink) waLink.href = `https://api.whatsapp.com/send?phone=${cleanPhone}`;
+        if (waText) waText.textContent = phone;
     }
 
     // Facebook
     const fbLink = document.getElementById('footer-fb-link');
     const fbText = document.getElementById('footer-fb-text');
-    if (allSettings.facebook) {
-        if (fbLink) fbLink.href = allSettings.facebook;
+    const facebook = settings.facebook || settings['رابط الفيسبوك'];
+    const facebookName = settings.facebook_name || settings['اسم الصفحة'];
+
+    if (facebook) {
+        if (fbLink) fbLink.href = facebook;
     }
-    if (allSettings.facebook_name) {
-        if (fbText) fbText.textContent = allSettings.facebook_name;
+    if (facebookName) {
+        if (fbText) fbText.textContent = facebookName;
     }
 }
 
@@ -563,6 +587,67 @@ function renderMyOrders(phone) {
     container.innerHTML = '<p class="text-center text-on-surface-variant py-8">لا يوجد طلبات سابقة</p>';
 }
 
+
+async function submitOrderToSheet() {
+    const name = document.getElementById('checkout-name').value.trim();
+    const phone = document.getElementById('checkout-phone').value.trim();
+    const address = document.getElementById('checkout-address').value.trim();
+    const notes = document.getElementById('checkout-notes').value.trim();
+    
+    // Calculate total
+    const subtotal = cart.reduce((sum, i) => sum + (parseFloat(i.price) * i.qty), 0);
+    const delivery = 2.0; // Fixed for now or get from detected region
+    const total = (subtotal + delivery).toFixed(2);
+    
+    const productsList = cart.map(i => `${i.name} x${i.qty}`).join(' | ');
+    
+    const payload = {
+        action: 'addOrder',
+        customerName: name,
+        customerPhone: phone,
+        address: address,
+        products: productsList,
+        total: total + ' د.أ',
+        notes: notes
+    };
+
+    try {
+        const res = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+            // Save customer info for profile
+            localStorage.setItem(PROFILE_KEY, JSON.stringify({ name, phone }));
+            
+            // Redirect to WhatsApp
+            const storePhone = (allSettings.phone || '+962788144210').replace(/\s+/g, '').replace('+', '').replace(/^00/, '');
+            let cleanStorePhone = storePhone;
+            if (cleanStorePhone.startsWith('0') && cleanStorePhone.length === 10) {
+                cleanStorePhone = '962' + cleanStorePhone.substring(1);
+            }
+            
+            const message = `طلب جديد رقم #${data.orderId}\nالاسم: ${name}\nالهاتف: ${phone}\nالعنوان: ${address}\nالمنتجات: ${productsList}\nالمجموع: ${total} د.أ`;
+            const encodedMsg = encodeURIComponent(message);
+            const waUrl = `https://api.whatsapp.com/send?phone=${cleanStorePhone}&text=${encodedMsg}`;
+            
+            window.open(waUrl, '_blank');
+            showToast('تم إرسال الطلب بنجاح!');
+            return true;
+        } else {
+            showToast('فشل إرسال الطلب: ' + data.message);
+            return false;
+        }
+    } catch (err) {
+        console.error('Submit error:', err);
+        showToast('حدث خطأ أثناء إرسال الطلب');
+        return false;
+    }
+}
+
 // Global Exports
 window.navigate = navigate;
 window.goBack = goBack;
@@ -574,6 +659,7 @@ window.toggleVideoAudio = toggleVideoAudio;
 window.changeSlide = typeof changeSlide !== 'undefined' ? changeSlide : null;
 window.loginProfile = loginProfile;
 window.logoutProfile = logoutProfile;
+window.submitOrderToSheet = submitOrderToSheet;
 window.showEditProfile = () => { document.getElementById('profile-edit-form').style.display='block'; };
 window.saveProfileEdit = () => {
     const name = document.getElementById('profile-edit-name').value.trim();

@@ -39,6 +39,18 @@ function getInitials(name) {
   return name.substring(0, 2).toUpperCase();
 }
 
+function cleanWhatsAppPhone(phone) {
+  if (!phone) return '';
+  let clean = String(phone).replace(/\s+/g, '').replace('+', '').replace(/^00/, '');
+  if (clean.startsWith('0') && clean.length === 10) {
+    clean = '962' + clean.substring(1);
+  }
+  if (clean.length === 9 && !clean.startsWith('962')) {
+    clean = '962' + clean;
+  }
+  return clean;
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
@@ -53,11 +65,11 @@ async function fetchData(forceRefresh = false) {
   }
   try {
     const [prodRes, ordRes, custRes, catRes, setRes] = await Promise.all([
-      fetch(`${API_URL}?action=getProducts`),
-      fetch(`${API_URL}?action=getAllOrders`),
-      fetch(`${API_URL}?action=getAllCustomers`),
-      fetch(`${API_URL}?action=getCategories`),
-      fetch(`${API_URL}?action=getSettings`)
+      fetch(`${API_URL}?action=getProducts&_=${Date.now()}`),
+      fetch(`${API_URL}?action=getAllOrders&_=${Date.now()}`),
+      fetch(`${API_URL}?action=getAllCustomers&_=${Date.now()}`),
+      fetch(`${API_URL}?action=getCategories&_=${Date.now()}`),
+      fetch(`${API_URL}?action=getSettings&_=${Date.now()}`)
     ]);
 
     const prodData = await prodRes.json();
@@ -229,7 +241,9 @@ function renderOrdersPage() {
         </div>
         <div class="mb-4">
             <h4 class="text-sm font-bold text-on-surface mb-1">${o.customerName}</h4>
-            <p class="text-xs text-primary font-bold mb-2">${o.phone}</p>
+            <a href="https://api.whatsapp.com/send?phone=${cleanWhatsAppPhone(o.phone)}" target="_blank" class="text-xs text-primary font-bold mb-2 no-underline flex items-center gap-1 hover:underline">
+                <span class="material-symbols-outlined text-[14px]">chat</span> ${o.phone}
+            </a>
             <p class="text-[11px] text-on-surface-variant leading-relaxed bg-surface p-2 rounded-md">${o.products.replace(/\|/g, '<br/>')}</p>
             ${o.notes ? `<p class="text-[10px] text-amber-700 bg-amber-50 mt-2 p-1.5 rounded">ملاحظة: ${o.notes}</p>` : ''}
             ${o.address ? `<p class="text-[10px] text-on-surface-variant mt-2 border-t pt-2 border-outline-variant/20 line-clamp-2"><span class="material-symbols-outlined text-[12px] align-middle">location_on</span> ${o.address}</p>` : ''}
