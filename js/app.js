@@ -1,6 +1,6 @@
 // سند سنتر — منطق التطبيق (قاعدة بيانات Google Sheets)
 // ── الإعدادات ──
-const API_URL = 'https://script.google.com/macros/s/AKfycbxoRaKkmPuzFusdvzkTwXrAhVn4FfFXZFUheS7dftK9RGW7VE0G7rmPOQelMg5wy6wVCg/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbx6V72d-tWyfPlU7AlA6LSovbdDP-gbRy-gjVnPmMwFoYbf0ub6AcpIomjGTtwN7UpV4g/exec';
 
 const STORAGE_KEYS = {
     PRODUCTS: 'sanadcenter_products',
@@ -97,6 +97,14 @@ function renderAll() {
     renderHeroSlider();
     renderListingProducts();
     updateListingCategoryButtons();
+    
+    // Initialize Carousel if functions from index.html are available
+    if (typeof initCarouselDOM === 'function') {
+        initCarouselDOM();
+        if (typeof updateCarousel === 'function') updateCarousel(false);
+        if (typeof initSwipe === 'function') initSwipe();
+        if (typeof handleVideoPlay === 'function') handleVideoPlay();
+    }
 }
 
 // ── UI Rendering ──
@@ -221,6 +229,23 @@ function updateListingCategoryButtons() {
     `;
 }
 
+function goBack() {
+    if (history.length > 1) {
+        history.back();
+    } else {
+        navigate('page_0');
+    }
+}
+
+window.addEventListener('popstate', (e) => {
+    if (e.state && e.state.page) {
+        showPage(e.state.page);
+        if (e.state.productId) populateProductDetail(e.state.productId);
+    } else {
+        showPage('page_0');
+    }
+});
+
 // ── Navigation ──
 function navigate(pageId, productId = null) {
     if (currentPage === pageId && !productId) return;
@@ -302,7 +327,7 @@ function updateCartBadges() {
 }
 
 function renderListingProducts() {
-    const grid = document.getElementById('listing-grid');
+    const grid = document.getElementById('listing-products-grid');
     if (!grid) return;
     
     let filtered = allProducts;
@@ -315,13 +340,13 @@ function renderListingProducts() {
     }
 
     grid.innerHTML = filtered.map(p => `
-        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm">
-            <img src="${p.image}" class="w-full h-48 object-cover rounded-xl mb-4" alt="${p.name}">
-            <h4 class="font-bold text-on-surface mb-1">${p.name}</h4>
+        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm cursor-pointer hover:bg-surface-container transition-colors">
+            <img src="${p.image}" class="w-full h-48 object-cover rounded-xl mb-4" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
+            <h4 class="font-bold text-on-surface mb-1 truncate">${p.name}</h4>
             <p class="text-sm text-on-surface-variant line-clamp-2 mb-4">${p.description}</p>
             <div class="flex justify-between items-center">
                 <span class="text-lg font-black text-primary">${p.price} د.أ</span>
-                <button onclick="event.stopPropagation(); addToCartById('${p.id}')" class="bg-primary text-white w-10 h-10 rounded-full flex items-center justify-center border-0 cursor-pointer">
+                <button onclick="event.stopPropagation(); addToCartById('${p.id}')" class="bg-primary text-white w-10 h-10 rounded-full flex items-center justify-center border-0 cursor-pointer active:scale-95 transition-transform">
                     <span class="material-symbols-outlined">add_shopping_cart</span>
                 </button>
             </div>
@@ -339,10 +364,12 @@ function filterCategory(cat) {
     
     // Update active button state
     document.querySelectorAll('#listing-category-filters button').forEach(btn => {
-        if (btn.textContent === (cat === 'all' ? 'الكل' : cat)) {
-            btn.className = 'bg-primary text-on-primary px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer';
+        const btnText = btn.textContent.trim();
+        const targetText = (cat === 'all' ? 'الكل' : cat);
+        if (btnText === targetText) {
+            btn.className = 'snap-start whitespace-nowrap px-6 py-2.5 rounded-full bg-primary text-white font-bold shadow-ambient transition-transform active:scale-95 border-0 cursor-pointer';
         } else {
-            btn.className = 'bg-surface-container text-on-surface-variant px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer';
+            btn.className = 'snap-start whitespace-nowrap px-6 py-2.5 rounded-full bg-white text-on-surface-variant font-semibold border border-outline hover:bg-primary-light/20 transition-colors cursor-pointer';
         }
     });
 }
@@ -351,16 +378,56 @@ function populateProductDetail(id) {
     const p = allProducts.find(x => x.id === id);
     if (!p) return;
     
-    document.getElementById('detail-img').src = p.image;
-    document.getElementById('detail-name').textContent = p.name;
-    document.getElementById('detail-price').textContent = p.price + ' د.أ';
-    document.getElementById('detail-desc').textContent = p.description;
-    document.getElementById('detail-cat').textContent = p.category;
-    
-    const addBtn = document.getElementById('detail-add-btn');
-    if (addBtn) {
-        addBtn.onclick = () => addToCartById(p.id);
-    }
+    const container = document.getElementById('product-detail-content');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="space-y-8 animate-fadeIn">
+            <div class="relative rounded-3xl overflow-hidden shadow-ambient group h-[400px]">
+                <img src="${p.image}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
+                <div class="absolute top-6 right-6">
+                    <button onclick="toggleFavorite('${p.id}')" class="w-12 h-12 rounded-full bg-white/80 backdrop-blur-md flex items-center justify-center text-tertiary shadow-lg border-0 cursor-pointer active:scale-95 transition-all">
+                        <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' ${isFavorite(p.id) ? 1 : 0};">favorite</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="px-2 space-y-6">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="inline-block px-3 py-1 rounded-full bg-primary-light/30 text-primary text-xs font-bold mb-3">${p.category}</span>
+                        <h2 class="text-3xl font-black text-on-surface">${p.name}</h2>
+                    </div>
+                    <div class="text-left">
+                        <p class="text-2xl font-black text-primary">${p.price} د.أ</p>
+                        <p class="text-xs text-on-surface-variant font-medium">شامل الضريبة</p>
+                    </div>
+                </div>
+
+                <div class="bg-surface-container-low p-6 rounded-2xl">
+                    <h3 class="font-bold text-on-surface mb-3 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-primary">description</span>
+                        وصف المنتج
+                    </h3>
+                    <p class="text-on-surface-variant leading-relaxed font-medium">${p.description}</p>
+                </div>
+
+                <div class="fixed bottom-0 left-0 w-full p-6 bg-surface/80 backdrop-blur-xl z-50 border-t border-outline/10">
+                    <div class="max-w-4xl mx-auto flex gap-4">
+                        <div class="flex items-center bg-surface-container rounded-xl px-2">
+                            <button onclick="updateItemQty('${p.id}', -1); populateProductDetail('${p.id}')" class="w-10 h-10 flex items-center justify-center text-primary font-bold border-0 bg-transparent cursor-pointer">-</button>
+                            <span class="w-10 text-center font-bold text-lg">${getCartQty(p.id)}</span>
+                            <button onclick="updateItemQty('${p.id}', 1); populateProductDetail('${p.id}')" class="w-10 h-10 flex items-center justify-center text-primary font-bold border-0 bg-transparent cursor-pointer">+</button>
+                        </div>
+                        <button onclick="addToCartById('${p.id}')" class="flex-1 bg-primary text-on-primary py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 shadow-ambient border-0 cursor-pointer active:scale-95 transition-all">
+                            <span class="material-symbols-outlined">add_shopping_cart</span>
+                            إضافة للسلة
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 function renderCart() {
@@ -444,32 +511,77 @@ function toggleVideoAudio(e) {
     btn.innerHTML = `<span class="material-symbols-outlined text-xl">${video.muted ? 'volume_off' : 'volume_up'}</span>`;
 }
 
-let currentSlide = 0;
-function changeSlide(idx) {
-    const wrapper = document.getElementById('carouselWrapper');
-    if (!wrapper) return;
-    const slides = document.querySelectorAll('.carousel-slide');
-    if (idx < 0) idx = slides.length - 1;
-    if (idx >= slides.length) idx = 0;
+
+// ── Profile Logic ──
+const PROFILE_KEY = 'sanadcenter_profile';
+
+function loadProfile() {
+    const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
+    const loginSection = document.getElementById('profile-login-section');
+    const infoSection = document.getElementById('profile-info-section');
     
-    currentSlide = idx;
-    wrapper.style.transform = `translateX(${idx * 100}%)`;
-    
-    document.querySelectorAll('.carousel-dot').forEach((dot, i) => {
-        if (i === idx) {
-            dot.className = 'carousel-dot w-8 h-2.5 rounded-full bg-primary transition-all duration-300 cursor-pointer';
-        } else {
-            dot.className = 'carousel-dot w-2.5 h-2.5 rounded-full bg-white/50 transition-all duration-300 cursor-pointer';
-        }
-    });
+    if (!profile) {
+        if (loginSection) loginSection.style.display = 'block';
+        if (infoSection) infoSection.style.display = 'none';
+    } else {
+        if (loginSection) loginSection.style.display = 'none';
+        if (infoSection) infoSection.style.display = 'block';
+        
+        document.getElementById('profile-display-name').textContent = profile.name;
+        document.getElementById('profile-display-phone').textContent = profile.phone;
+        document.getElementById('profile-avatar').textContent = profile.name.substring(0, 2).toUpperCase();
+        
+        renderMyOrders(profile.phone);
+    }
 }
 
+function loginProfile() {
+    const name = document.getElementById('profile-name-input').value.trim();
+    const phone = document.getElementById('profile-phone-input').value.trim();
+    
+    if (!name || !phone) {
+        showToast('الرجاء إدخال الاسم ورقم الهاتف');
+        return;
+    }
+    
+    const profile = { name, phone };
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    loadProfile();
+    showToast('مرحباً بك ' + name);
+}
 
-// Redefining global window functions for HTML access
+function logoutProfile() {
+    localStorage.removeItem(PROFILE_KEY);
+    loadProfile();
+}
+
+function renderMyOrders(phone) {
+    const container = document.getElementById('my-orders-list');
+    if (!container) return;
+    
+    // In a real app, we would fetch from API using phone
+    container.innerHTML = '<p class="text-center text-on-surface-variant py-8">لا يوجد طلبات سابقة</p>';
+}
+
+// Global Exports
 window.navigate = navigate;
+window.goBack = goBack;
 window.filterCategory = filterCategory;
 window.addToCartById = addToCartById;
 window.updateItemQty = updateItemQty;
 window.toggleFavorite = toggleFavorite;
 window.toggleVideoAudio = toggleVideoAudio;
-window.changeSlide = changeSlide;
+window.changeSlide = typeof changeSlide !== 'undefined' ? changeSlide : null;
+window.loginProfile = loginProfile;
+window.logoutProfile = logoutProfile;
+window.showEditProfile = () => { document.getElementById('profile-edit-form').style.display='block'; };
+window.saveProfileEdit = () => {
+    const name = document.getElementById('profile-edit-name').value.trim();
+    const phone = document.getElementById('profile-edit-phone').value.trim();
+    if (name && phone) {
+        localStorage.setItem(PROFILE_KEY, JSON.stringify({ name, phone }));
+        document.getElementById('profile-edit-form').style.display='none';
+        loadProfile();
+    }
+};
+
