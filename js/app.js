@@ -1,6 +1,6 @@
 // سند سنتر — منطق التطبيق (قاعدة بيانات Google Sheets)
 // ── الإعدادات ──
-const API_URL = 'https://script.google.com/macros/s/AKfycbxoRaKkmPuzFusdvzkTwXrAhVn4FfFXZFUheS7dftK9RGW7VE0G7rmPOQelMg5wy6wVCg/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbx6V72d-tWyfPlU7AlA6LSovbdDP-gbRy-gjVnPmMwFoYbf0ub6AcpIomjGTtwN7UpV4g/exec';
 
 const STORAGE_KEYS = {
     PRODUCTS: 'sanadcenter_products',
