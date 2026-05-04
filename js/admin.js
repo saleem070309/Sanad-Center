@@ -35,8 +35,9 @@ function parseCurrency(val) {
 }
 
 function getInitials(name) {
-  if (!name) return 'U';
-  return name.substring(0, 2).toUpperCase();
+  const n = String(name || '').trim();
+  if (!n) return 'U';
+  return n.substring(0, 2).toUpperCase();
 }
 
 function cleanWhatsAppPhone(phone) {
@@ -49,6 +50,29 @@ function cleanWhatsAppPhone(phone) {
     clean = '962' + clean;
   }
   return clean;
+}
+
+function formatOrderProducts(productsStr) {
+  if (!productsStr) return 'لا يوجد منتجات';
+  
+  try {
+    // Try to parse as JSON
+    const products = JSON.parse(productsStr);
+    if (Array.isArray(products)) {
+      return products.map(p => `
+        <div class="flex items-center gap-2 mb-1 last:mb-0">
+          ${p.image ? `<img src="${getDriveImageUrl(p.image)}" class="w-6 h-6 rounded object-cover border border-outline-variant/30" onerror="this.style.display='none'">` : ''}
+          <span class="text-[10px] font-medium text-on-surface line-clamp-1">${p.name}</span>
+          <span class="text-[9px] bg-surface-container px-1.5 py-0.5 rounded text-on-surface-variant font-bold">x${p.qty || 1}</span>
+        </div>
+      `).join('');
+    }
+  } catch (e) {
+    // Fallback to legacy string format
+    return productsStr.replace(/\|/g, '<br/>');
+  }
+  
+  return productsStr;
 }
 
 // Init
@@ -154,28 +178,27 @@ function renderDashboard() {
   const totalCustomersEl = document.getElementById('dash-total-customers');
   if (totalCustomersEl) totalCustomersEl.textContent = allCustomers.length;
 
-  let productCounts = {};
-  validOrders.forEach(o => {
-    if (o.products) {
-      const items = o.products.split('|').map(i => i.trim());
-      items.forEach(item => {
-        const parts = item.split('x');
-        const name = parts[0].trim();
-        const qty = parts.length > 1 ? parseInt(parts[1]) : 1;
-        productCounts[name] = (productCounts[name] || 0) + qty;
-      });
-    }
-  });
-  let topProduct = 'لا يوجد بيانات';
-  let maxQty = 0;
-  for (const [name, qty] of Object.entries(productCounts)) {
-    if (qty > maxQty) {
-      maxQty = qty;
-      topProduct = name;
-    }
-  }
+  // Hardcoded Top Product (as requested by USER)
+  const hardcodedTopProduct = {
+    id: "2",
+    name: "كرسي رحلات ",
+    price: 6,
+    description: "الون الاخضر والاسود والاحمر",
+    image: "https://lh3.googleusercontent.com/d/1CnNbuY04gjluRqd8mCu0coUXfFIeeVGS"
+  };
+
   const topProdEl = document.getElementById('dash-top-product');
-  if (topProdEl) topProdEl.textContent = topProduct;
+  const topProdImg = document.getElementById('dash-top-product-img');
+  const topProdImgCont = document.getElementById('dash-top-product-img-container');
+  const topProdIcon = document.getElementById('dash-top-product-icon');
+
+  if (topProdEl) topProdEl.textContent = hardcodedTopProduct.name;
+  
+  if (topProdImg && hardcodedTopProduct.image) {
+    topProdImg.src = hardcodedTopProduct.image;
+    if (topProdImgCont) topProdImgCont.classList.remove('hidden');
+    if (topProdIcon) topProdIcon.classList.add('hidden');
+  }
 
   const recent = allOrders.slice(0, 5); 
   const activityContainer = document.getElementById('dash-recent-activities');
@@ -205,7 +228,7 @@ function renderDashboard() {
                       <h4 class="font-bold text-on-surface truncate pr-2 max-w-[200px]">${o.customerName}</h4>
                       <span class="text-xs text-on-surface-variant font-bold">#${o.orderId}</span>
                   </div>
-                  <p class="text-xs text-on-surface-variant truncate max-w-[250px]">${o.products}</p>
+                  <div class="mt-1 space-y-1">${formatOrderProducts(o.products)}</div>
                   <p class="text-[10px] text-on-surface-variant/70 mt-1">${dateStr}</p>
               </div>
               <div class="text-left shrink-0">
@@ -244,7 +267,7 @@ function renderOrdersPage() {
             <a href="https://api.whatsapp.com/send?phone=${cleanWhatsAppPhone(o.phone)}" target="_blank" class="text-xs text-primary font-bold mb-2 no-underline flex items-center gap-1 hover:underline">
                 <span class="material-symbols-outlined text-[14px]">chat</span> ${o.phone}
             </a>
-            <p class="text-[11px] text-on-surface-variant leading-relaxed bg-surface p-2 rounded-md">${o.products.replace(/\|/g, '<br/>')}</p>
+            <div class="text-[11px] text-on-surface-variant leading-relaxed bg-surface p-2 rounded-md space-y-1">${formatOrderProducts(o.products)}</div>
             ${o.notes ? `<p class="text-[10px] text-amber-700 bg-amber-50 mt-2 p-1.5 rounded">ملاحظة: ${o.notes}</p>` : ''}
             ${o.address ? `<p class="text-[10px] text-on-surface-variant mt-2 border-t pt-2 border-outline-variant/20 line-clamp-2"><span class="material-symbols-outlined text-[12px] align-middle">location_on</span> ${o.address}</p>` : ''}
         </div>

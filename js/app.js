@@ -10,18 +10,47 @@ const STORAGE_KEYS = {
     FAVORITES: 'sanadcenter_favorites'
 };
 
-// ── State ──
-let allProducts = JSON.parse(localStorage.getItem(STORAGE_KEYS.PRODUCTS) || '[]');
-let allCategories = JSON.parse(localStorage.getItem(STORAGE_KEYS.CATEGORIES) || '[]');
-let allSettings = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || '{}');
-let cart = JSON.parse(localStorage.getItem(STORAGE_KEYS.CART) || '[]');
-let favorites = JSON.parse(localStorage.getItem(STORAGE_KEYS.FAVORITES) || '[]');
-let currentPage = 'page_0';
+// ── Helper Function للتخزين الآمن ──
+function safeJSONParse(key, defaultValue) {
+    try {
+        const item = localStorage.getItem(key);
+        return item ? JSON.parse(item) : defaultValue;
+    } catch (e) {
+        console.error(`Error parsing ${key} from localStorage`, e);
+        return defaultValue;
+    }
+}
 
-// -- Location & Map State --
-let selectionMap = null;
-let selectionMarker = null;
-let currentCoords = { lat: 32.5514, lng: 36.0114 }; // Default: Ramtha
+function formatUserOrderProducts(productsStr) {
+    if (!productsStr) return 'لا يوجد منتجات';
+    try {
+        const products = JSON.parse(productsStr);
+        if (Array.isArray(products)) {
+            return products.map(p => `
+                <div class="flex items-center gap-2 mb-1 last:mb-0">
+                    ${p.image ? `<img src="${getDriveImageUrl(p.image)}" class="w-8 h-8 rounded object-cover border border-outline-variant/30" onerror="this.style.display='none'">` : ''}
+                    <div class="flex-1">
+                        <p class="text-xs font-bold text-on-surface line-clamp-1">${p.name}</p>
+                        <p class="text-[10px] text-on-surface-variant">الكمية: ${p.qty || 1}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (e) {
+        return productsStr.replace(/\|/g, '<br/>');
+    }
+    return productsStr;
+}
+
+// ── State ──
+let allProducts = safeJSONParse(STORAGE_KEYS.PRODUCTS, []);
+let allCategories = safeJSONParse(STORAGE_KEYS.CATEGORIES, []);
+let allSettings = safeJSONParse(STORAGE_KEYS.SETTINGS, {});
+let cart = safeJSONParse(STORAGE_KEYS.CART, []);
+let favorites = safeJSONParse(STORAGE_KEYS.FAVORITES, []);
+let currentPage = 'page_0';
+let currentCategory = 'all';
+let searchQuery = '';
 
 // ── Google Drive Image Helper ──
 function getDriveImageUrl(url) {
@@ -81,9 +110,11 @@ function applySettings() {
     const waLink = document.getElementById('footer-wa-link');
     const waText = document.getElementById('footer-wa-text');
     if (allSettings.phone) {
-        const cleanPhone = allSettings.phone.replace(/\s+/g, '').replace('+', '');
+        // تحويل القيمة لنص أولاً لتجنب الانهيار إذا كانت القيمة رقمية
+        const phoneStr = String(allSettings.phone);
+        const cleanPhone = phoneStr.replace(/\s+/g, '').replace('+', '');
         if (waLink) waLink.href = `https://wa.me/${cleanPhone}`;
-        if (waText) waText.textContent = allSettings.phone;
+        if (waText) waText.textContent = phoneStr;
     }
 
     // Facebook
@@ -97,7 +128,6 @@ function applySettings() {
     }
 }
 
-// Flag to track if the hero slider has been initialized
 let heroSliderInitialized = false;
 
 function renderAll() {
@@ -108,12 +138,10 @@ function renderAll() {
     updateCartBadges();
 }
 
-// Called ONCE after data is fetched to set up the slider
 function initHeroSlider() {
     if (heroSliderInitialized) return;
     renderHeroSlider();
     heroSliderInitialized = true;
-    // Re-init the carousel from index.html's carousel logic
     if (typeof initCarousel === 'function') {
         initCarousel();
     }
@@ -148,10 +176,9 @@ function renderHeroSlider() {
 
     const sliderProducts = allProducts.filter(p => p.inSlider);
 
-    // Slide 0: Video Banner (always present)
     let wrapperHTML = `
-        <div class="carousel-slide min-w-full h-full relative" data-slide="0">
-            <video id="carouselVideo" class="w-full h-full object-cover" playsinline muted autoplay>
+        <div class="carousel-slide min-w-full h-full relative" data-slide="0" style="display: block;">
+            <video id="carouselVideo" class="w-full h-full object-cover" playsinline muted autoplay loop>
                 <source src="assets/videos/demo.mp4" type="video/mp4">
             </video>
             <div class="absolute inset-0 bg-black/20 pointer-events-none"></div>
@@ -159,15 +186,14 @@ function renderHeroSlider() {
                 <h2 class="text-3xl md:text-5xl font-black mb-4 leading-tight">شاهد مجموعتنا الجديدة</h2>
                 <p class="text-white/80 mb-6 font-medium">تجربة تسوق فريدة تنتظرك.</p>
             </div>
-            <button id="videoAudioBtn" onclick="toggleVideoAudio(event)" class="absolute bottom-8 left-8 w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white border-0 cursor-pointer z-10">
+            <button id="videoAudioBtn" onclick="toggleVideoAudio(event)" class="absolute bottom-8 left-8 w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white border-0 cursor-pointer z-10 hover:bg-white/40 transition">
                 <span class="material-symbols-outlined text-xl">volume_off</span>
             </button>
         </div>
     `;
 
-    // Slide 1: Static Hero Banner (always present)
     wrapperHTML += `
-        <div class="carousel-slide min-w-full h-full relative" data-slide="1">
+        <div class="carousel-slide min-w-full h-full relative" data-slide="1" style="display: none;">
             <img class="w-full h-full object-cover" src="assets/images/hero.png" alt="سند سنتر" />
             <div class="absolute inset-0 bg-gradient-to-t from-primary/80 via-primary/20 to-transparent pointer-events-none"></div>
             <div class="absolute bottom-0 right-0 p-8 text-white text-right max-w-lg pointer-events-none">
@@ -185,11 +211,10 @@ function renderHeroSlider() {
         <div class="carousel-dot w-2.5 h-2.5 rounded-full bg-white/50 transition-all duration-300 cursor-pointer" onclick="changeSlide(1)"></div>
     `;
 
-    // Dynamic Product Slides (from slider products)
     sliderProducts.forEach((p, idx) => {
-        const slideIdx = idx + 2; // starts at 2 (after video + hero)
+        const slideIdx = idx + 2; 
         wrapperHTML += `
-            <div class="carousel-slide min-w-full h-full relative" data-slide="${slideIdx}">
+            <div class="carousel-slide min-w-full h-full relative" data-slide="${slideIdx}" style="display: none;">
                 <img class="w-full h-full object-cover" src="${p.image}" alt="${p.name}" onerror="this.src='assets/images/hero.png'" />
                 <div class="absolute inset-0 bg-gradient-to-t from-primary/80 via-primary/20 to-transparent pointer-events-none"></div>
                 <div class="absolute bottom-0 right-0 p-8 text-white text-right max-w-lg pointer-events-none">
@@ -206,6 +231,38 @@ function renderHeroSlider() {
 
     wrapper.innerHTML = wrapperHTML;
     dotsContainer.innerHTML = dotsHTML;
+}
+
+// ── Slider Functions (كانت مفقودة) ──
+function changeSlide(index) {
+    const slides = document.querySelectorAll('.carousel-slide');
+    const dots = document.querySelectorAll('.carousel-dot');
+    
+    if (!slides.length) return;
+    
+    slides.forEach((slide, i) => {
+        slide.style.display = i === index ? 'block' : 'none';
+    });
+    
+    dots.forEach((dot, i) => {
+        if (i === index) {
+            dot.className = 'carousel-dot w-8 h-2.5 rounded-full bg-primary transition-all duration-300 cursor-pointer';
+        } else {
+            dot.className = 'carousel-dot w-2.5 h-2.5 rounded-full bg-white/50 transition-all duration-300 cursor-pointer';
+        }
+    });
+}
+
+function toggleVideoAudio(e) {
+    if (e) e.stopPropagation();
+    const video = document.getElementById('carouselVideo');
+    const btn = document.getElementById('videoAudioBtn');
+    if (video && btn) {
+        video.muted = !video.muted;
+        btn.innerHTML = video.muted 
+            ? '<span class="material-symbols-outlined text-xl">volume_off</span>' 
+            : '<span class="material-symbols-outlined text-xl">volume_up</span>';
+    }
 }
 
 function renderUserProducts() {
@@ -252,9 +309,9 @@ function updateListingCategoryButtons() {
     if (!container) return;
 
     container.innerHTML = `
-        <button onclick="filterCategory('all')" class="bg-primary text-on-primary px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap shadow-md border-0 cursor-pointer">الكل</button>
+        <button onclick="filterCategory('all')" class="${currentCategory === 'all' ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'} px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap shadow-md border-0 cursor-pointer">الكل</button>
         ${allCategories.map(cat => `
-            <button onclick="filterCategory('${cat.name}')" class="bg-surface-container text-on-surface-variant px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap border-0 cursor-pointer">${cat.name}</button>
+            <button onclick="filterCategory('${cat.name}')" class="${currentCategory === cat.name ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'} px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap border-0 cursor-pointer">${cat.name}</button>
         `).join('')}
     `;
 }
@@ -277,7 +334,7 @@ function showPage(pageId) {
         updateBottomNavState(pageId);
         if (pageId === 'page_3') renderCart();
         if (pageId === 'page_6') renderFavorites();
-        if (pageId === 'page_1') filterCategory('all');
+        if (pageId === 'page_1') renderListingProducts(); // Refresh listings when visited
         if (pageId === 'page_7') loadProfile();
     }
 }
@@ -296,13 +353,16 @@ function updateItemQty(id, delta) {
         item.qty += delta;
         if (item.qty <= 0) cart = cart.filter(i => i.id !== id);
     } else if (delta > 0) {
-        cart.push({ ...p, qty: 1 });
+        cart.push({ ...p, qty: delta }); // Ensure correct delta
     }
 
     saveCart();
     renderUserProducts();
-    renderListingProducts();
+    
+    // Only re-render listings and cart if currently on those pages to improve performance
+    if (currentPage === 'page_1') renderListingProducts();
     if (currentPage === 'page_3') renderCart();
+    
     updateCartBadges();
 }
 
@@ -319,7 +379,7 @@ function toggleFavorite(id) {
     }
     saveFavorites();
     renderUserProducts();
-    renderListingProducts();
+    if (currentPage === 'page_1') renderListingProducts();
     if (currentPage === 'page_6') renderFavorites();
 }
 
@@ -343,6 +403,13 @@ function updateCartBadges() {
     });
 }
 
+// ── وظيفة البحث المفقودة ──
+function updateSearch(query) {
+    searchQuery = query ? query.toLowerCase() : '';
+    if (currentPage !== 'page_1') navigate('page_1');
+    renderListingProducts();
+}
+
 function renderListingProducts() {
     const grid = document.getElementById('listing-products-grid');
     if (!grid) return;
@@ -353,16 +420,22 @@ function renderListingProducts() {
     }
 
     if (searchQuery) {
-        filtered = filtered.filter(p => p.name.includes(searchQuery) || p.description.includes(searchQuery));
+        filtered = filtered.filter(p => 
+            (p.name && p.name.toLowerCase().includes(searchQuery)) || 
+            (p.description && p.description.toLowerCase().includes(searchQuery))
+        );
     }
 
     if (filtered.length === 0) {
-        grid.innerHTML = '<p class="col-span-full text-center py-12 text-on-surface-variant font-bold">لا توجد منتجات في هذا القسم</p>';
+        grid.innerHTML = '<p class="col-span-full text-center py-12 text-on-surface-variant font-bold">لا توجد منتجات تطابق بحثك</p>';
         return;
     }
 
     grid.innerHTML = filtered.map(p => `
-        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm cursor-pointer hover:shadow-md transition-shadow">
+        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm cursor-pointer hover:shadow-md transition-shadow relative">
+            <button onclick="event.stopPropagation(); toggleFavorite('${p.id}')" class="absolute top-4 left-4 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center border-0 cursor-pointer z-10">
+                <span class="material-symbols-outlined text-tertiary text-[18px]" style="font-variation-settings: 'FILL' ${isFavorite(p.id) ? 1 : 0};">favorite</span>
+            </button>
             <img src="${p.image}" class="w-full h-48 object-cover rounded-xl mb-4" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
             <h4 class="font-bold text-on-surface mb-1">${p.name}</h4>
             <p class="text-sm text-on-surface-variant line-clamp-2 mb-4">${p.description}</p>
@@ -376,22 +449,11 @@ function renderListingProducts() {
     `).join('');
 }
 
-let currentCategory = 'all';
-let searchQuery = '';
-
 function filterCategory(cat) {
     currentCategory = cat;
     if (currentPage !== 'page_1') navigate('page_1');
     renderListingProducts();
-
-    // Update active button state
-    document.querySelectorAll('#listing-category-filters button').forEach(btn => {
-        if (btn.textContent === (cat === 'all' ? 'الكل' : cat)) {
-            btn.className = 'bg-primary text-on-primary px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer whitespace-nowrap';
-        } else {
-            btn.className = 'bg-surface-container text-on-surface-variant px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer whitespace-nowrap';
-        }
-    });
+    updateListingCategoryButtons(); // Refresh active button styles
 }
 
 function populateProductDetail(id) {
@@ -441,18 +503,18 @@ function renderCart() {
                 <h4 class="font-bold text-on-surface">${item.name}</h4>
                 <p class="text-primary font-bold">${item.price} د.أ</p>
                 <div class="flex items-center gap-3 mt-2">
-                    <button onclick="updateItemQty('${item.id}', -1)" class="w-8 h-8 rounded-full bg-surface-container border-0 cursor-pointer">-</button>
+                    <button onclick="updateItemQty('${item.id}', -1)" class="w-8 h-8 rounded-full bg-surface-container border-0 cursor-pointer flex justify-center items-center font-bold">-</button>
                     <span class="font-bold">${item.qty}</span>
-                    <button onclick="updateItemQty('${item.id}', 1)" class="w-8 h-8 rounded-full bg-surface-container border-0 cursor-pointer">+</button>
+                    <button onclick="updateItemQty('${item.id}', 1)" class="w-8 h-8 rounded-full bg-surface-container border-0 cursor-pointer flex justify-center items-center font-bold">+</button>
                 </div>
             </div>
-            <button onclick="updateItemQty('${item.id}', -${item.qty})" class="text-error border-0 bg-transparent cursor-pointer">
+            <button onclick="updateItemQty('${item.id}', -${item.qty})" class="text-error border-0 bg-transparent cursor-pointer hover:bg-error/10 p-2 rounded-full transition">
                 <span class="material-symbols-outlined">delete</span>
             </button>
         </div>
     `).join('');
 
-    const total = cart.reduce((sum, i) => sum + (parseFloat(i.price) * i.qty), 0);
+    const total = cart.reduce((sum, i) => sum + ((parseFloat(i.price) || 0) * i.qty), 0);
     document.getElementById('cart-total').textContent = total.toFixed(2) + ' د.أ';
 }
 
@@ -466,7 +528,6 @@ function showToast(msg) {
         setTimeout(() => toast.remove(), 300);
     }, 2000);
 }
-
 
 // ── Favorites Rendering ──
 function renderFavorites() {
@@ -494,7 +555,7 @@ function renderFavorites() {
 
 // ── Profile Functions ──
 function loadProfile() {
-    const userData = JSON.parse(localStorage.getItem('sanadcenter_user') || 'null');
+    const userData = safeJSONParse('sanadcenter_user', null);
     if (userData) {
         document.getElementById('profile-login-section').style.display = 'none';
         document.getElementById('profile-info-section').style.display = 'block';
@@ -528,7 +589,7 @@ function logoutProfile() {
 }
 
 function showEditProfile() {
-    const userData = JSON.parse(localStorage.getItem('sanadcenter_user') || '{}');
+    const userData = safeJSONParse('sanadcenter_user', {});
     document.getElementById('profile-edit-name').value = userData.name || '';
     document.getElementById('profile-edit-phone').value = userData.phone || '';
     document.getElementById('profile-edit-form').style.display = 'block';
@@ -547,10 +608,69 @@ function saveProfileEdit() {
     showToast('تم حفظ التعديلات');
 }
 
-function loadMyOrders(phone) {
+async function loadMyOrders(phone) {
     const container = document.getElementById('my-orders-list');
     if (!container) return;
-    container.innerHTML = '<p class="text-center text-on-surface-variant py-8">لا توجد طلبات سابقة</p>';
+
+    container.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-12 gap-3">
+            <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-xs text-on-surface-variant font-bold">جاري تحميل طلباتك...</p>
+        </div>
+    `;
+
+    try {
+        const res = await fetch(`${API_URL}?action=getMyOrders&phone=${phone}`);
+        const data = await res.json();
+
+        if (data.status === 'success' && data.orders && data.orders.length > 0) {
+            container.innerHTML = data.orders.map(o => {
+                const statusColors = {
+                    'جديد': 'bg-blue-100 text-blue-700',
+                    'يُحضّر': 'bg-amber-100 text-amber-700',
+                    'في الطريق': 'bg-green-100 text-green-700',
+                    'تم التوصيل': 'bg-gray-100 text-gray-700',
+                    'ملغي': 'bg-red-100 text-red-700'
+                };
+                const colorClass = statusColors[o.orderStatus] || 'bg-surface-container text-on-surface-variant';
+                
+                const dateObj = new Date(o.date);
+                const dateStr = isNaN(dateObj) ? o.date : dateObj.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' });
+
+                return `
+                    <div class="bg-surface-container-lowest p-4 rounded-xl shadow-sm border border-outline-variant/30 mb-4">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <span class="text-[10px] text-on-surface-variant font-bold block mb-1">رقم الطلب: #${o.orderId}</span>
+                                <span class="text-[10px] text-on-surface-variant/70">${dateStr}</span>
+                            </div>
+                            <span class="text-[10px] font-bold px-2 py-1 rounded-full ${colorClass}">${o.orderStatus}</span>
+                        </div>
+                        <div class="bg-surface p-2 rounded-lg mb-3">
+                            ${formatUserOrderProducts(o.products)}
+                        </div>
+                        <div class="flex justify-between items-center pt-2 border-t border-outline-variant/10">
+                            <span class="text-xs text-on-surface-variant">إجمالي المبلغ</span>
+                            <span class="text-sm font-bold text-primary">${o.total}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            container.innerHTML = `
+                <div class="text-center py-12 px-6">
+                    <div class="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mx-auto mb-4 text-on-surface-variant/30">
+                        <span class="material-symbols-outlined text-4xl">shopping_bag</span>
+                    </div>
+                    <p class="text-on-surface-variant font-bold text-sm mb-1">لا توجد طلبات سابقة</p>
+                    <p class="text-[11px] text-on-surface-variant/70">اطلب الآن لتظهر طلباتك هنا</p>
+                </div>
+            `;
+        }
+    } catch (e) {
+        console.error("Error loading my orders:", e);
+        container.innerHTML = '<p class="text-center text-red-500 py-8 text-xs font-bold">خطأ في تحميل البيانات. يرجى المحاولة لاحقاً.</p>';
+    }
 }
 
 // ── Back Navigation ──
@@ -594,145 +714,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateBottomNavState('page_0');
 });
 
-// Redefining global window functions for HTML access
-window.navigate = navigate;
-window.goBack = goBack;
-window.filterCategory = filterCategory;
-window.addToCartById = addToCartById;
-// -- Location & Checkout Functions --
-
-async function getMyLocation() {
-    if (!navigator.geolocation) {
-        showToast("عذراً، متصفحك لا يدعم تحديد الموقع");
-        return;
-    }
-
-    showToast("جاري تحديد موقعك...");
-    
-    navigator.geolocation.getCurrentPosition(async (position) => {
-        const { latitude, longitude } = position.coords;
-        currentCoords = { lat: latitude, lng: longitude };
-        
-        document.getElementById('checkout-latlng').value = `${latitude},${longitude}`;
-        
-        // Update Address Box
-        document.getElementById('checkout-address-box').classList.remove('hidden');
-        document.getElementById('checkout-address-text').textContent = "جاري جلب العنوان...";
-        
-        try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=ar`);
-            const data = await res.json();
-            const address = data.display_name || `${latitude}, ${longitude}`;
-            document.getElementById('checkout-address-text').textContent = address;
-            document.getElementById('checkout-address').classList.remove('hidden');
-        } catch (err) {
-            document.getElementById('checkout-address-text').textContent = `${latitude}, ${longitude}`;
-            document.getElementById('checkout-address').classList.remove('hidden');
-        }
-    }, (error) => {
-        showToast("فشل تحديد الموقع. يرجى المحاولة يدوياً.");
-    });
-}
-
-function openMapSelection() {
-    const container = document.getElementById('checkout-map-container');
-    container.classList.remove('hidden');
-    
-    if (!selectionMap) {
-        selectionMap = L.map('checkoutSelectionMap', {
-            zoomControl: false
-        }).setView([currentCoords.lat, currentCoords.lng], 15);
-        
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap'
-        }).addTo(selectionMap);
-        
-        // Use map move to update currentCoords
-        selectionMap.on('move', () => {
-            const center = selectionMap.getCenter();
-            currentCoords = { lat: center.lat, lng: center.lng };
-        });
-    } else {
-        selectionMap.setView([currentCoords.lat, currentCoords.lng], 15);
-    }
-    
-    setTimeout(() => selectionMap.invalidateSize(), 300);
-}
-
-async function confirmMapSelection() {
-    const { lat, lng } = currentCoords;
-    document.getElementById('checkout-latlng').value = `${lat},${lng}`;
-    
-    document.getElementById('checkout-map-container').classList.add('hidden');
-    document.getElementById('checkout-address-box').classList.remove('hidden');
-    document.getElementById('checkout-address-text').textContent = "جاري جلب العنوان...";
-    
-    try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ar`);
-        const data = await res.json();
-        const address = data.display_name || `${lat}, ${lng}`;
-        document.getElementById('checkout-address-text').textContent = address;
-        document.getElementById('checkout-address').classList.remove('hidden');
-    } catch (err) {
-        document.getElementById('checkout-address-text').textContent = `${lat}, ${lng}`;
-        document.getElementById('checkout-address').classList.remove('hidden');
-    }
-}
-
-async function submitOrderToSheet() {
-    const name = document.getElementById('checkout-name').value;
-    const phone = document.getElementById('checkout-phone').value;
-    const addressDetails = document.getElementById('checkout-address').value;
-    const latlng = document.getElementById('checkout-latlng').value;
-    const addressFull = document.getElementById('checkout-address-text').textContent;
-    const notes = document.getElementById('checkout-notes').value;
-
-    if (!name || !phone || (!latlng && !addressDetails)) {
-        showToast("يرجى ملء جميع الخانات الأساسية");
-        return false;
-    }
-
-    const orderData = {
-        action: 'addOrder',
-        customerName: name,
-        customerPhone: phone,
-        governorate: '',
-        address: `${addressFull} | ${addressDetails}`,
-        products: JSON.stringify(cart),
-        total: cart.reduce((sum, i) => sum + (parseFloat(i.price) * i.qty), 0),
-        customerLocation: latlng,
-        notes: notes
-    };
-
-    showToast("جاري إرسال طلبك...");
-
-    try {
-        await fetch(`${API_URL}`, {
-            method: 'POST',
-            mode: 'no-cors',
-            cache: 'no-cache',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(orderData)
-        });
-
-        showToast("تم إرسال طلبك بنجاح! سنتواصل معك قريباً.");
-        
-        // Clear Cart
-        cart = [];
-        saveCart();
-        updateCartBadges();
-        closeCheckoutModal();
-        navigate('page_0');
-        
-        return true;
-    } catch (err) {
-        console.error("Order submission failed:", err);
-        showToast("فشل إرسال الطلب. يرجى المحاولة مرة أخرى.");
-        return false;
-    }
-}
-
-// Redefining global window functions for HTML access
+// ── Window Bindings ──
+// لتتمكن عناصر HTML من استدعاء هذه الدوال مباشرة
 window.navigate = navigate;
 window.goBack = goBack;
 window.filterCategory = filterCategory;
@@ -745,7 +728,6 @@ window.showEditProfile = showEditProfile;
 window.saveProfileEdit = saveProfileEdit;
 window.renderFavorites = renderFavorites;
 window.loadProfile = loadProfile;
-window.getMyLocation = getMyLocation;
-window.openMapSelection = openMapSelection;
-window.confirmMapSelection = confirmMapSelection;
-window.submitOrderToSheet = submitOrderToSheet;
+window.changeSlide = changeSlide;
+window.toggleVideoAudio = toggleVideoAudio;
+window.updateSearch = updateSearch;
