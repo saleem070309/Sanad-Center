@@ -346,18 +346,7 @@
         </header>
         <main class="pt-20 pb-32 max-w-4xl mx-auto px-4 md:px-0">
             <div id="product-detail-content">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
-                    <div class="relative group">
-                        <img id="detail-img" class="w-full aspect-square object-cover rounded-3xl shadow-ambient" src="assets/images/ball.png" />
-                    </div>
-                    <div class="flex flex-col h-full">
-                        <span id="detail-cat" class="text-primary font-black uppercase tracking-[0.2em] text-xs mb-4">التصنيف</span>
-                        <h2 id="detail-name" class="text-4xl md:text-5xl font-black text-on-surface mb-4 leading-tight">اسم المنتج</h2>
-                        <span id="detail-price" class="text-3xl font-black text-primary mb-6">0.00 د.أ</span>
-                        <p id="detail-desc" class="text-on-surface-variant text-lg leading-relaxed mb-10">وصف المنتج...</p>
-                        <button id="detail-add-btn" class="w-full border-0 bg-primary text-on-primary py-5 rounded-2xl font-bold text-xl hover:opacity-90 transition-all active:scale-95 shadow-ambient">إضافة إلى السلة</button>
-                    </div>
-                </div>
+                <!-- Populated dynamically by app.js populateProductDetail() -->
             </div>
         </main>
     </div>
@@ -1067,8 +1056,281 @@
             </button>
         </div>
     </div>
+    <script>
+        // ── Infinite Loop Carousel ──
+        // Uses clone technique: [CloneLast, Slide0, Slide1, ..., SlideN, CloneFirst]
+        // Real slides are at indices 1..N, clones at 0 and N+1
+        let currentPos = 1;          // position in the extended array (1 = first real slide)
+        let totalReal = 0;           // number of real slides
+        let carouselInterval = null;
+        let carouselWrapper = null;
+        let isAnimating = false;
+        let startX = 0;
+        let isDragging = false;
 
+        function initCarousel() {
+            carouselWrapper = document.getElementById('carouselWrapper');
+            if (!carouselWrapper) return;
 
+            // Remove old clones if any (from previous init)
+            carouselWrapper.querySelectorAll('.carousel-clone').forEach(c => c.remove());
+
+            const realSlides = carouselWrapper.querySelectorAll('.carousel-slide');
+            totalReal = realSlides.length;
+            if (totalReal === 0) return;
+
+            // Clone last slide → prepend, Clone first slide → append
+            if (totalReal > 1) {
+                const cloneFirst = realSlides[0].cloneNode(true);
+                const cloneLast = realSlides[totalReal - 1].cloneNode(true);
+                cloneFirst.classList.add('carousel-clone');
+                cloneLast.classList.add('carousel-clone');
+                // Remove IDs from clones to avoid duplicates
+                cloneFirst.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+                cloneLast.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+                carouselWrapper.appendChild(cloneFirst);
+                carouselWrapper.insertBefore(cloneLast, carouselWrapper.firstChild);
+            }
+
+            currentPos = 1; // start at first real slide
+            clearInterval(carouselInterval);
+            isAnimating = false;
+
+            // Jump to position without animation
+            setPosition(currentPos, false);
+            updateDots();
+            setupSwipe();
+            handleVideoState();
+        }
+
+        function setPosition(pos, animate) {
+            if (!carouselWrapper) return;
+            if (animate) {
+                carouselWrapper.style.transition = 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+            } else {
+                carouselWrapper.style.transition = 'none';
+                void carouselWrapper.offsetHeight; 
+            }
+            carouselWrapper.style.transform = `translateX(${pos * 100}%)`;
+        }
+
+        function getRealIndex() {
+            return currentPos - 1;
+        }
+
+        function updateDots() {
+            const dots = document.querySelectorAll('.carousel-dot');
+            const realIdx = (currentPos - 1 + totalReal) % totalReal; 
+            dots.forEach((dot, i) => {
+                if (i === realIdx) {
+                    dot.classList.add('bg-primary', 'w-8');
+                    dot.classList.remove('bg-white/50', 'w-2.5');
+                } else {
+                    dot.classList.add('bg-white/50', 'w-2.5');
+                    dot.classList.remove('bg-primary', 'w-8');
+                }
+            });
+        }
+
+        function goToPos(pos, animate = true) {
+            if (!carouselWrapper || totalReal === 0 || isAnimating) return;
+
+            isAnimating = animate;
+            currentPos = pos;
+            setPosition(currentPos, animate);
+
+            if (animate && totalReal > 1) {
+                const onEnd = () => {
+                    carouselWrapper.removeEventListener('transitionend', onEnd);
+                    
+                    if (currentPos <= 0) {
+                        currentPos = totalReal;
+                        setPosition(currentPos, false);
+                    } else if (currentPos >= totalReal + 1) {
+                        currentPos = 1;
+                        setPosition(currentPos, false);
+                    }
+
+                    updateDots();
+                    isAnimating = false;
+                    handleVideoState();
+                };
+                carouselWrapper.addEventListener('transitionend', onEnd);
+
+                setTimeout(() => {
+                    if (isAnimating) onEnd();
+                }, 600);
+            } else {
+                updateDots();
+                isAnimating = false;
+                handleVideoState();
+            }
+        }
+
+        function nextSlide() {
+            if (totalReal <= 1) return;
+            goToPos(currentPos + 1, true);
+        }
+
+        function prevSlide() {
+            if (totalReal <= 1) return;
+            goToPos(currentPos - 1, true);
+        }
+
+        function changeSlide(realIdx) {
+            if (isAnimating) return;
+            clearInterval(carouselInterval);
+            goToPos(realIdx + 1, true);
+        }
+
+        function handleVideoState() {
+            const videoEl = document.getElementById('carouselVideo');
+            if (!videoEl) {
+                startAutoSlide();
+                return;
+            }
+
+            const realIdx = (currentPos - 1 + totalReal) % totalReal;
+            if (realIdx === 0) {
+                clearInterval(carouselInterval);
+                videoEl.currentTime = 0;
+                let p = videoEl.play();
+                if (p !== undefined) p.catch(() => {});
+                videoEl.onended = () => nextSlide();
+            } else {
+                videoEl.pause();
+                videoEl.currentTime = 0;
+                startAutoSlide();
+            }
+        }
+
+        function startAutoSlide() {
+            clearInterval(carouselInterval);
+            if (totalReal <= 1 || isDragging) return;
+            carouselInterval = setInterval(() => {
+                if (!isAnimating && !isDragging) nextSlide();
+            }, 5000);
+        }
+
+        function toggleVideoAudio(e) {
+            if (e) e.stopPropagation();
+            const vid = document.getElementById('carouselVideo');
+            const btn = document.getElementById('videoAudioBtn');
+            if (!vid || !btn) return;
+
+            const icon = btn.querySelector('.material-symbols-outlined');
+            if (vid.muted) {
+                vid.muted = false;
+                if (icon) icon.textContent = 'volume_up';
+                btn.classList.add('bg-primary/40');
+                btn.classList.remove('bg-white/20');
+            } else {
+                vid.muted = true;
+                if (icon) icon.textContent = 'volume_off';
+                btn.classList.remove('bg-primary/40');
+                btn.classList.add('bg-white/20');
+            }
+        }
+
+        function setupSwipe() {
+            const carousel = document.getElementById('heroCarousel');
+            if (!carousel || carousel._swipeAttached) return;
+            carousel._swipeAttached = true;
+
+            carousel.addEventListener('touchstart', (e) => {
+                if (isAnimating) return;
+                startX = e.touches[0].clientX;
+                isDragging = true;
+                clearInterval(carouselInterval);
+                if (carouselWrapper) carouselWrapper.style.transition = 'none';
+            }, { passive: true });
+
+            carousel.addEventListener('touchmove', (e) => {
+                if (!isDragging || !carouselWrapper || isAnimating) return;
+                const diff = e.touches[0].clientX - startX;
+                const percentMove = (diff / carousel.offsetWidth) * 100;
+                // Back to standard: content follows finger
+                carouselWrapper.style.transform = `translateX(${(currentPos * 100) + percentMove}%)`;
+            }, { passive: true });
+
+            carousel.addEventListener('touchend', (e) => {
+                if (!isDragging) return;
+                isDragging = false;
+                const diff = e.changedTouches[0].clientX - startX;
+
+                if (Math.abs(diff) > 50) {
+                    // In RTL:
+                    // Swipe LEFT (diff < 0) pushes content to right -> Previous slide
+                    // Swipe RIGHT (diff > 0) pulls content from left -> Next slide
+                    if (diff < 0) prevSlide(); 
+                    else nextSlide();          
+                } else {
+                    setPosition(currentPos, true);
+                    handleVideoState();
+                }
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initCarousel();
+        });
+
+        function openCheckoutModal() {
+            if (cart.length === 0) {
+                showToast('عذراً، سلتك فارغة!');
+                return;
+            }
+            const modal = document.getElementById('checkoutModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeCheckoutModal() {
+            const modal = document.getElementById('checkoutModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        async function submitCheckout() {
+            const name = document.getElementById('checkout-name').value.trim();
+            const phone = document.getElementById('checkout-phone').value.trim();
+            const address = document.getElementById('checkout-address').value.trim();
+            const btn = document.getElementById('submit-checkout-btn');
+
+            if (!name || !phone || !address) {
+                showToast('الرجاء إدخال الاسم ورقم الهاتف وتحديد الموقع');
+                return;
+            }
+
+            // Show loading state
+            const originalContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-xl">progress_activity</span> جارٍ إرسال طلبك...';
+            btn.classList.add('opacity-70', 'cursor-not-allowed');
+
+            try {
+                // Send to Google Sheets
+                const success = await submitOrderToSheet();
+                if (success) {
+                    cart = [];
+                    saveCart();
+                    closeCheckoutModal();
+                    navigate('page_5');
+                } else {
+                    // Re-enable if failed
+                    btn.disabled = false;
+                    btn.innerHTML = originalContent;
+                    btn.classList.remove('opacity-70', 'cursor-not-allowed');
+                }
+            } catch (err) {
+                console.error('Checkout error:', err);
+                showToast('حدث خطأ غير متوقع');
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+                btn.classList.remove('opacity-70', 'cursor-not-allowed');
+            }
+        }
+    </script>
 
     <!-- App Logic -->
     <script src="js/app.js"></script>

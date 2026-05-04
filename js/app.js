@@ -7,8 +7,7 @@ const STORAGE_KEYS = {
     CATEGORIES: 'sanadcenter_categories',
     SETTINGS: 'sanadcenter_settings',
     CART: 'sanadcenter_cart',
-    FAVORITES: 'sanadcenter_favorites',
-    USER: 'sanadcenter_user'
+    FAVORITES: 'sanadcenter_favorites'
 };
 
 // ── State ──
@@ -17,17 +16,7 @@ let allCategories = JSON.parse(localStorage.getItem(STORAGE_KEYS.CATEGORIES) || 
 let allSettings = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || '{}');
 let cart = JSON.parse(localStorage.getItem(STORAGE_KEYS.CART) || '[]');
 let favorites = JSON.parse(localStorage.getItem(STORAGE_KEYS.FAVORITES) || '[]');
-let currentUser = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || 'null');
 let currentPage = 'page_0';
-let currentCategory = 'all';
-let searchQuery = '';
-
-// Carousel State
-let currentSlide = 0;
-let carouselInterval;
-let isTransitioning = false;
-let startX = 0;
-let isDragging = false;
 
 // ── Google Drive Image Helper ──
 function getDriveImageUrl(url) {
@@ -75,16 +64,8 @@ async function fetchData() {
         }
 
         renderAll();
+        initHeroSlider(); // Initialize slider ONCE after data loads
         applySettings();
-        
-        // Init carousel after data is ready
-        setTimeout(() => {
-            initCarouselDOM();
-            updateCarousel(false);
-            initSwipe();
-            handleVideoPlay();
-        }, 500);
-
     } catch (err) {
         console.error('Failed to fetch data:', err);
     }
@@ -111,12 +92,26 @@ function applySettings() {
     }
 }
 
+// Flag to track if the hero slider has been initialized
+let heroSliderInitialized = false;
+
 function renderAll() {
     renderUserProducts(); // Best Sellers
     renderCategories();
-    renderHeroSlider();
     renderListingProducts();
     updateListingCategoryButtons();
+    updateCartBadges();
+}
+
+// Called ONCE after data is fetched to set up the slider
+function initHeroSlider() {
+    if (heroSliderInitialized) return;
+    renderHeroSlider();
+    heroSliderInitialized = true;
+    // Re-init the carousel from index.html's carousel logic
+    if (typeof initCarousel === 'function') {
+        initCarousel();
+    }
 }
 
 // ── UI Rendering ──
@@ -126,7 +121,7 @@ function renderCategories() {
     if (!grid) return;
 
     if (allCategories.length === 0) {
-        grid.innerHTML = '<p class="col-span-full text-center py-4 text-on-surface-variant font-medium">جاري تحميل الأقسام...</p>';
+        grid.innerHTML = '<p class="col-span-full text-center py-4">جاري تحميل الأقسام...</p>';
         return;
     }
 
@@ -148,10 +143,10 @@ function renderHeroSlider() {
 
     const sliderProducts = allProducts.filter(p => p.inSlider);
 
-    // Initial Video Slide (Slide 0)
+    // Slide 0: Video Banner (always present)
     let wrapperHTML = `
         <div class="carousel-slide min-w-full h-full relative" data-slide="0">
-            <video id="carouselVideo" class="w-full h-full object-cover" playsinline muted autoplay loop>
+            <video id="carouselVideo" class="w-full h-full object-cover" playsinline muted autoplay>
                 <source src="assets/videos/demo.mp4" type="video/mp4">
             </video>
             <div class="absolute inset-0 bg-black/20 pointer-events-none"></div>
@@ -165,11 +160,29 @@ function renderHeroSlider() {
         </div>
     `;
 
-    let dotsHTML = `<div class="carousel-dot w-8 h-2.5 rounded-full bg-primary transition-all duration-300 cursor-pointer" onclick="changeSlide(0)"></div>`;
+    // Slide 1: Static Hero Banner (always present)
+    wrapperHTML += `
+        <div class="carousel-slide min-w-full h-full relative" data-slide="1">
+            <img class="w-full h-full object-cover" src="assets/images/hero.png" alt="سند سنتر" />
+            <div class="absolute inset-0 bg-gradient-to-t from-primary/80 via-primary/20 to-transparent pointer-events-none"></div>
+            <div class="absolute bottom-0 right-0 p-8 text-white text-right max-w-lg pointer-events-none">
+                <span class="inline-block px-4 py-1 rounded-full bg-accent text-white text-xs font-bold tracking-widest mb-4">جديد</span>
+                <h2 class="text-3xl md:text-5xl font-black mb-4 leading-tight">اجعل منزلك ذكياً وعصرياً</h2>
+                <p class="text-white/80 mb-6 font-medium">اكتشف تشكيلتنا الجديدة من الأجهزة المنزلية المتطورة.</p>
+                <button onclick="event.stopPropagation(); navigate('page_1')"
+                    class="bg-accent text-white px-8 py-3 rounded-xl font-bold transition-transform active:scale-95 shadow-ambient border-0 pointer-events-auto cursor-pointer">تسوق الآن</button>
+            </div>
+        </div>
+    `;
 
-    // Dynamic Slides
+    let dotsHTML = `
+        <div class="carousel-dot w-8 h-2.5 rounded-full bg-primary transition-all duration-300 cursor-pointer" onclick="changeSlide(0)"></div>
+        <div class="carousel-dot w-2.5 h-2.5 rounded-full bg-white/50 transition-all duration-300 cursor-pointer" onclick="changeSlide(1)"></div>
+    `;
+
+    // Dynamic Product Slides (from slider products)
     sliderProducts.forEach((p, idx) => {
-        const slideIdx = idx + 1;
+        const slideIdx = idx + 2; // starts at 2 (after video + hero)
         wrapperHTML += `
             <div class="carousel-slide min-w-full h-full relative" data-slide="${slideIdx}">
                 <img class="w-full h-full object-cover" src="${p.image}" alt="${p.name}" onerror="this.src='assets/images/hero.png'" />
@@ -234,9 +247,9 @@ function updateListingCategoryButtons() {
     if (!container) return;
 
     container.innerHTML = `
-        <button onclick="filterCategory('all')" class="${currentCategory === 'all' ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'} px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap shadow-md border-0 cursor-pointer">الكل</button>
+        <button onclick="filterCategory('all')" class="bg-primary text-on-primary px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap shadow-md border-0 cursor-pointer">الكل</button>
         ${allCategories.map(cat => `
-            <button onclick="filterCategory('${cat.name}')" class="${currentCategory === cat.name ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'} px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap border-0 cursor-pointer">${cat.name}</button>
+            <button onclick="filterCategory('${cat.name}')" class="bg-surface-container text-on-surface-variant px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap border-0 cursor-pointer">${cat.name}</button>
         `).join('')}
     `;
 }
@@ -257,38 +270,12 @@ function showPage(pageId) {
         window.scrollTo(0, 0);
         currentPage = pageId;
         updateBottomNavState(pageId);
-        
-        if (pageId === 'page_0') {
-             startCarousel();
-        } else {
-             clearInterval(carouselInterval);
-        }
-
         if (pageId === 'page_3') renderCart();
         if (pageId === 'page_6') renderFavorites();
-        if (pageId === 'page_1') renderListingProducts();
+        if (pageId === 'page_1') filterCategory('all');
         if (pageId === 'page_7') loadProfile();
     }
 }
-
-function goBack() {
-    if (window.history.length > 1) {
-        window.history.back();
-    } else {
-        navigate('page_0');
-    }
-}
-
-window.addEventListener('popstate', (e) => {
-    if (e.state && e.state.page) {
-        showPage(e.state.page);
-        if (e.state.page === 'page_2' && e.state.productId) {
-            populateProductDetail(e.state.productId);
-        }
-    } else {
-        showPage('page_0');
-    }
-});
 
 function getCartQty(id) {
     const item = cart.find(i => i.id === id);
@@ -308,7 +295,9 @@ function updateItemQty(id, delta) {
     }
 
     saveCart();
-    renderAll();
+    renderUserProducts();
+    renderListingProducts();
+    if (currentPage === 'page_3') renderCart();
     updateCartBadges();
 }
 
@@ -324,7 +313,9 @@ function toggleFavorite(id) {
         favorites.push(id);
     }
     saveFavorites();
-    renderAll();
+    renderUserProducts();
+    renderListingProducts();
+    if (currentPage === 'page_6') renderFavorites();
 }
 
 function isFavorite(id) {
@@ -348,7 +339,7 @@ function updateCartBadges() {
 }
 
 function renderListingProducts() {
-    const grid = document.getElementById('listing-products-grid'); // Match index.html ID
+    const grid = document.getElementById('listing-products-grid');
     if (!grid) return;
 
     let filtered = allProducts;
@@ -361,52 +352,71 @@ function renderListingProducts() {
     }
 
     if (filtered.length === 0) {
-        grid.innerHTML = '<p class="col-span-full text-center py-12 text-on-surface-variant">لا توجد منتجات حالياً</p>';
+        grid.innerHTML = '<p class="col-span-full text-center py-12 text-on-surface-variant font-bold">لا توجد منتجات في هذا القسم</p>';
         return;
     }
 
     grid.innerHTML = filtered.map(p => `
-        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm flex flex-col h-full">
-            <img src="${p.image}" class="w-full h-40 object-cover rounded-xl mb-4" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
-            <h4 class="font-bold text-on-surface mb-1 truncate">${p.name}</h4>
-            <p class="text-xs text-on-surface-variant line-clamp-2 mb-4 flex-1">${p.description}</p>
-            <div class="flex justify-between items-center mt-auto">
-                <span class="text-md font-black text-primary">${p.price} د.أ</span>
-                <button onclick="event.stopPropagation(); addToCartById('${p.id}')" class="bg-primary text-white w-8 h-8 rounded-full flex items-center justify-center border-0 cursor-pointer">
-                    <span class="material-symbols-outlined text-sm">add_shopping_cart</span>
+        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm cursor-pointer hover:shadow-md transition-shadow">
+            <img src="${p.image}" class="w-full h-48 object-cover rounded-xl mb-4" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
+            <h4 class="font-bold text-on-surface mb-1">${p.name}</h4>
+            <p class="text-sm text-on-surface-variant line-clamp-2 mb-4">${p.description}</p>
+            <div class="flex justify-between items-center">
+                <span class="text-lg font-black text-primary">${p.price} د.أ</span>
+                <button onclick="event.stopPropagation(); addToCartById('${p.id}')" class="bg-primary text-white w-10 h-10 rounded-full flex items-center justify-center border-0 cursor-pointer">
+                    <span class="material-symbols-outlined">add_shopping_cart</span>
                 </button>
             </div>
         </div>
     `).join('');
 }
 
+let currentCategory = 'all';
+let searchQuery = '';
+
 function filterCategory(cat) {
     currentCategory = cat;
     if (currentPage !== 'page_1') navigate('page_1');
     renderListingProducts();
-    updateListingCategoryButtons();
+
+    // Update active button state
+    document.querySelectorAll('#listing-category-filters button').forEach(btn => {
+        if (btn.textContent === (cat === 'all' ? 'الكل' : cat)) {
+            btn.className = 'bg-primary text-on-primary px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer';
+        } else {
+            btn.className = 'bg-surface-container text-on-surface-variant px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer';
+        }
+    });
 }
 
 function populateProductDetail(id) {
     const p = allProducts.find(x => x.id === id);
     if (!p) return;
 
-    const img = document.getElementById('detail-img');
-    const name = document.getElementById('detail-name');
-    const price = document.getElementById('detail-price');
-    const desc = document.getElementById('detail-desc');
-    const cat = document.getElementById('detail-cat');
-    
-    if (img) img.src = p.image;
-    if (name) name.textContent = p.name;
-    if (price) price.textContent = p.price + ' د.أ';
-    if (desc) desc.textContent = p.description;
-    if (cat) cat.textContent = p.category;
+    const container = document.getElementById('product-detail-content');
+    if (!container) return;
 
-    const addBtn = document.getElementById('detail-add-btn');
-    if (addBtn) {
-        addBtn.onclick = () => addToCartById(p.id);
-    }
+    container.innerHTML = `
+        <div class="relative w-full h-[350px] rounded-2xl overflow-hidden mb-6">
+            <img src="${p.image}" class="w-full h-full object-cover" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
+            <button onclick="toggleFavorite('${p.id}')" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white/80 backdrop-blur flex items-center justify-center border-0 cursor-pointer">
+                <span class="material-symbols-outlined text-tertiary" style="font-variation-settings: 'FILL' ${isFavorite(p.id) ? 1 : 0};">favorite</span>
+            </button>
+        </div>
+        <div class="px-2 space-y-4">
+            <span class="text-xs font-bold text-primary bg-primary-container/30 px-3 py-1 rounded-full">${p.category}</span>
+            <h2 class="text-3xl font-black text-on-surface">${p.name}</h2>
+            <p class="text-on-surface-variant leading-relaxed">${p.description}</p>
+            <div class="flex items-center justify-between mt-6 pt-4 border-t border-outline/20">
+                <span class="text-3xl font-black text-primary">${p.price} د.أ</span>
+                <button onclick="addToCartById('${p.id}')"
+                    class="bg-primary text-on-primary px-8 py-3 rounded-xl font-bold transition-transform active:scale-95 border-0 cursor-pointer flex items-center gap-2">
+                    <span class="material-symbols-outlined">add_shopping_cart</span>
+                    أضف للسلة
+                </button>
+            </div>
+        </div>
+    `;
 }
 
 function renderCart() {
@@ -415,8 +425,7 @@ function renderCart() {
 
     if (cart.length === 0) {
         container.innerHTML = '<p class="text-center py-12 text-on-surface-variant">السلة فارغة</p>';
-        const totalEl = document.getElementById('cart-total');
-        if (totalEl) totalEl.textContent = '0.00 د.أ';
+        document.getElementById('cart-total').textContent = '0.00 د.أ';
         return;
     }
 
@@ -439,362 +448,9 @@ function renderCart() {
     `).join('');
 
     const total = cart.reduce((sum, i) => sum + (parseFloat(i.price) * i.qty), 0);
-    const totalEl = document.getElementById('cart-total');
-    if (totalEl) totalEl.textContent = total.toFixed(2) + ' د.أ';
+    document.getElementById('cart-total').textContent = total.toFixed(2) + ' د.أ';
 }
 
-function renderFavorites() {
-    const grid = document.getElementById('favorites-grid');
-    if (!grid) return;
-
-    const favoriteProducts = allProducts.filter(p => favorites.includes(p.id));
-
-    if (favoriteProducts.length === 0) {
-        grid.innerHTML = `
-            <div class="col-span-full flex flex-col items-center justify-center py-20 text-center">
-                <div class="w-20 h-20 bg-surface-container rounded-full flex items-center justify-center text-on-surface-variant/30 mb-4">
-                    <span class="material-symbols-outlined text-4xl">favorite</span>
-                </div>
-                <h3 class="text-xl font-bold text-on-surface mb-2">قائمة المفضلة فارغة</h3>
-                <p class="text-on-surface-variant mb-8 max-w-xs">لم تقم بإضافة أي منتجات إلى مفضلتك بعد.</p>
-                <button onclick="navigate('page_1')" class="bg-primary text-on-primary px-8 py-3 rounded-full font-bold transition-all active:scale-95 border-0 cursor-pointer shadow-ambient">تصفح المنتجات</button>
-            </div>
-        `;
-        return;
-    }
-
-    grid.innerHTML = favoriteProducts.map(p => `
-        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm flex flex-col h-full relative group">
-            <button onclick="event.stopPropagation(); toggleFavorite('${p.id}')" class="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-md text-error shadow-sm z-10 border-0 cursor-pointer">
-                <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-            </button>
-            <img src="${p.image}" class="w-full h-32 sm:h-40 object-cover rounded-xl mb-4" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
-            <h4 class="font-bold text-on-surface mb-1 truncate">${p.name}</h4>
-            <div class="flex justify-between items-center mt-auto pt-2">
-                <span class="text-md font-black text-primary">${p.price} د.أ</span>
-                <button onclick="event.stopPropagation(); addToCartById('${p.id}')" class="bg-primary-light/20 text-primary w-8 h-8 rounded-full flex items-center justify-center border-0 cursor-pointer">
-                    <span class="material-symbols-outlined text-sm">add_shopping_cart</span>
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
-
-// ── Profile Logic ──
-function loadProfile() {
-    const loginSection = document.getElementById('profile-login-section');
-    const infoSection = document.getElementById('profile-info-section');
-    if (!loginSection || !infoSection) return;
-
-    if (currentUser) {
-        loginSection.style.display = 'none';
-        infoSection.style.display = 'block';
-        document.getElementById('profile-display-name').textContent = currentUser.name;
-        document.getElementById('profile-display-phone').textContent = currentUser.phone;
-        document.getElementById('profile-avatar').textContent = currentUser.name.slice(0, 2).toUpperCase();
-        loadMyOrders();
-    } else {
-        loginSection.style.display = 'block';
-        infoSection.style.display = 'none';
-    }
-}
-
-function loginProfile() {
-    const name = document.getElementById('profile-name-input').value.trim();
-    const phone = document.getElementById('profile-phone-input').value.trim();
-
-    if (!name || !phone) {
-        showToast('الرجاء إدخال الاسم ورقم الهاتف');
-        return;
-    }
-
-    currentUser = { name, phone };
-    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
-    loadProfile();
-    showToast('تم تسجيل الدخول بنجاح');
-}
-
-function logoutProfile() {
-    currentUser = null;
-    localStorage.removeItem(STORAGE_KEYS.USER);
-    loadProfile();
-}
-
-async function loadMyOrders() {
-    const list = document.getElementById('my-orders-list');
-    if (!list || !currentUser) return;
-
-    try {
-        const res = await fetch(`${API_URL}?action=getMyOrders&phone=${currentUser.phone}`);
-        const data = await res.json();
-        if (data.status === 'success' && data.orders.length > 0) {
-            list.innerHTML = data.orders.map(o => `
-                <div class="bg-white p-4 rounded-xl border border-outline flex justify-between items-center">
-                    <div>
-                        <h4 class="font-bold text-on-surface">طلب رقم #${o.orderId}</h4>
-                        <p class="text-xs text-on-surface-variant">${new Date(o.date).toLocaleDateString('ar-JO')}</p>
-                    </div>
-                    <div class="text-right">
-                        <span class="px-2 py-1 rounded-full bg-primary-container text-on-primary-container text-[10px] font-bold">${o.orderStatus}</span>
-                        <p class="font-bold text-primary mt-1">${o.total} د.أ</p>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            list.innerHTML = '<p class="text-center py-8 text-on-surface-variant">لا توجد طلبات سابقة</p>';
-        }
-    } catch (err) {
-        list.innerHTML = '<p class="text-center py-8 text-error">خطأ في تحميل الطلبات</p>';
-    }
-}
-
-// ── Checkout & Tracking ──
-function openCheckoutModal() {
-    if (cart.length === 0) {
-        showToast('عذراً، سلتك فارغة!');
-        return;
-    }
-    const modal = document.getElementById('checkoutModal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-    }
-}
-
-function closeCheckoutModal() {
-    const modal = document.getElementById('checkoutModal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-    }
-}
-
-async function submitCheckout() {
-    const name = document.getElementById('checkout-name').value.trim();
-    const phone = document.getElementById('checkout-phone').value.trim();
-    const address = document.getElementById('checkout-address').value.trim() || 'الرمثا'; // Fallback
-    const notes = document.getElementById('checkout-notes').value.trim();
-    const btn = document.getElementById('submit-checkout-btn');
-
-    if (!name || !phone) {
-        showToast('الرجاء إدخال الاسم ورقم الهاتف');
-        return;
-    }
-
-    const originalContent = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-xl">progress_activity</span> جارٍ إرسال طلبك...';
-    btn.classList.add('opacity-70', 'cursor-not-allowed');
-
-    try {
-        const orderData = {
-            action: 'addOrder',
-            customerName: name,
-            customerPhone: phone,
-            governorate: 'الرمثا',
-            address: address,
-            products: cart.map(i => `${i.name} (${i.qty})`).join(', '),
-            total: cart.reduce((sum, i) => sum + (parseFloat(i.price) * i.qty), 0),
-            notes: notes
-        };
-
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            body: JSON.stringify(orderData)
-        });
-        const result = await response.json();
-
-        if (result.status === 'success') {
-            cart = [];
-            saveCart();
-            updateCartBadges();
-            closeCheckoutModal();
-            navigate('page_5');
-        } else {
-            showToast('حدث خطأ في إرسال الطلب');
-            btn.disabled = false;
-            btn.innerHTML = originalContent;
-            btn.classList.remove('opacity-70', 'cursor-not-allowed');
-        }
-    } catch (err) {
-        console.error('Checkout error:', err);
-        showToast('خطأ في الاتصال');
-        btn.disabled = false;
-        btn.innerHTML = originalContent;
-        btn.classList.remove('opacity-70', 'cursor-not-allowed');
-    }
-}
-
-async function refreshTracking() {
-    const orderId = document.getElementById('track-order-id')?.value.trim();
-    const phone = document.getElementById('track-phone')?.value.trim();
-    
-    if (!orderId || !phone) {
-        // Try to get from last order if available
-        const resultSection = document.getElementById('tracking-result-section');
-        if (resultSection && resultSection.style.display !== 'none') {
-            trackOrder();
-        } else {
-            showToast('الرجاء إدخال رقم الطلب ورقم الهاتف');
-        }
-        return;
-    }
-    trackOrder();
-}
-
-async function trackOrder() {
-    const orderId = document.getElementById('track-order-id').value.trim();
-    const phone = document.getElementById('track-phone').value.trim();
-    const btn = document.querySelector('[onclick="trackOrder()"]');
-    const resultSection = document.getElementById('tracking-result-section');
-    const emptySection = document.getElementById('tracking-empty-section');
-
-    if (!orderId || !phone) {
-        showToast('الرجاء إدخال رقم الطلب ورقم الهاتف');
-        return;
-    }
-
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span>';
-    }
-
-    try {
-        const res = await fetch(`${API_URL}?action=trackOrder&orderId=${orderId}&phone=${phone}`);
-        const data = await res.json();
-
-        if (data.status === 'success' && data.order) {
-            if (emptySection) emptySection.style.display = 'none';
-            if (resultSection) resultSection.style.display = 'block';
-            
-            document.getElementById('track-order-num').textContent = '#' + data.order.orderId;
-            document.getElementById('track-order-status').textContent = data.order.orderStatus;
-            document.getElementById('track-order-total').textContent = data.order.total + ' د.أ';
-            
-            // Highlight status step (if UI has them)
-            // ... logic to update visual stepper ...
-        } else {
-            showToast('الطلب غير موجود أو البيانات غير صحيحة');
-        }
-    } catch (err) {
-        console.error('Tracking error:', err);
-        showToast('خطأ في الاتصال بالخادم');
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<span class="material-symbols-outlined">search</span> تتبع الطلب';
-        }
-    }
-}
-
-// ── Carousel Advanced ──
-function initCarouselDOM() {
-    const wrap = document.getElementById('carouselWrapper');
-    if (!wrap) return;
-    const originalSlides = wrap.querySelectorAll('.carousel-slide');
-    if (originalSlides.length > 1) {
-        // Clone first slide for seamless loop if needed
-    }
-    // Update global refs
-    const slides = wrap.querySelectorAll('.carousel-slide');
-}
-
-function updateCarousel(animate = true) {
-    const wrapper = document.getElementById('carouselWrapper');
-    if (!wrapper) return;
-    
-    if (animate) {
-        wrapper.style.transition = 'transform 0.5s ease-out';
-    } else {
-        wrapper.style.transition = 'none';
-    }
-    wrapper.style.transform = `translateX(${currentSlide * 100}%)`;
-
-    const dots = document.querySelectorAll('.carousel-dot');
-    dots.forEach((dot, index) => {
-        if (index === currentSlide) {
-            dot.className = 'carousel-dot w-8 h-2.5 rounded-full bg-primary transition-all duration-300 cursor-pointer';
-        } else {
-            dot.className = 'carousel-dot w-2.5 h-2.5 rounded-full bg-white/50 transition-all duration-300 cursor-pointer';
-        }
-    });
-}
-
-function nextSlide() {
-    const slides = document.querySelectorAll('.carousel-slide');
-    if (slides.length <= 1) return;
-    currentSlide = (currentSlide + 1) % slides.length;
-    updateCarousel(true);
-    handleVideoPlay();
-}
-
-function prevSlide() {
-    const slides = document.querySelectorAll('.carousel-slide');
-    if (slides.length <= 1) return;
-    currentSlide = (currentSlide - 1 + slides.length) % slides.length;
-    updateCarousel(true);
-    handleVideoPlay();
-}
-
-function handleVideoPlay() {
-    const video = document.getElementById('carouselVideo');
-    if (!video) return;
-    if (currentSlide === 0) {
-        video.play().catch(() => {});
-    } else {
-        video.pause();
-    }
-}
-
-function startCarousel() {
-    clearInterval(carouselInterval);
-    carouselInterval = setInterval(nextSlide, 5000);
-}
-
-function changeSlide(idx) {
-    currentSlide = idx;
-    updateCarousel(true);
-    handleVideoPlay();
-    startCarousel();
-}
-
-function initSwipe() {
-    const carousel = document.getElementById('heroCarousel');
-    const wrapper = document.getElementById('carouselWrapper');
-    if (!carousel || !wrapper) return;
-
-    carousel.addEventListener('touchstart', (e) => {
-        startX = e.touches[0].clientX;
-        isDragging = true;
-        clearInterval(carouselInterval);
-        wrapper.style.transition = 'none';
-    }, { passive: true });
-
-    carousel.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
-        const currentX = e.touches[0].clientX;
-        const diff = currentX - startX;
-        const percentMove = (diff / carousel.offsetWidth) * 100;
-        wrapper.style.transform = `translateX(${(currentSlide * 100) + percentMove}%)`;
-    }, { passive: true });
-
-    carousel.addEventListener('touchend', (e) => {
-        if (!isDragging) return;
-        isDragging = false;
-        const endX = e.changedTouches[0].clientX;
-        const diff = endX - startX;
-
-        if (Math.abs(diff) > 50) {
-            if (diff < 0) nextSlide(); else prevSlide();
-        } else {
-            updateCarousel(true);
-        }
-        startCarousel();
-        handleVideoPlay();
-    });
-}
-
-// ── Global Helpers ──
 function showToast(msg) {
     const toast = document.createElement('div');
     toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-6 py-3 rounded-full text-sm font-bold shadow-lg z-[1000] transition-opacity duration-300';
@@ -806,9 +462,116 @@ function showToast(msg) {
     }, 2000);
 }
 
+
+// ── Favorites Rendering ──
+function renderFavorites() {
+    const grid = document.getElementById('favorites-grid');
+    if (!grid) return;
+
+    const favProducts = allProducts.filter(p => favorites.includes(p.id));
+
+    if (favProducts.length === 0) {
+        grid.innerHTML = '<p class="col-span-full text-center py-12 text-on-surface-variant font-bold">لم تضف أي منتج للمفضلة بعد</p>';
+        return;
+    }
+
+    grid.innerHTML = favProducts.map(p => `
+        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm cursor-pointer hover:shadow-md transition-shadow relative">
+            <button onclick="event.stopPropagation(); toggleFavorite('${p.id}')" class="absolute top-2 left-2 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center border-0 cursor-pointer z-10">
+                <span class="material-symbols-outlined text-tertiary text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+            </button>
+            <img src="${p.image}" class="w-full h-40 object-cover rounded-xl mb-3" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
+            <h4 class="font-bold text-on-surface truncate">${p.name}</h4>
+            <span class="text-sm font-bold text-primary">${p.price} د.أ</span>
+        </div>
+    `).join('');
+}
+
+// ── Profile Functions ──
+function loadProfile() {
+    const userData = JSON.parse(localStorage.getItem('sanadcenter_user') || 'null');
+    if (userData) {
+        document.getElementById('profile-login-section').style.display = 'none';
+        document.getElementById('profile-info-section').style.display = 'block';
+        document.getElementById('profile-display-name').textContent = userData.name;
+        document.getElementById('profile-display-phone').textContent = userData.phone;
+        const initials = userData.name.split(' ').map(w => w[0]).join('').substring(0, 2);
+        document.getElementById('profile-avatar').textContent = initials;
+        loadMyOrders(userData.phone);
+    } else {
+        document.getElementById('profile-login-section').style.display = 'block';
+        document.getElementById('profile-info-section').style.display = 'none';
+    }
+}
+
+function loginProfile() {
+    const name = document.getElementById('profile-name-input').value.trim();
+    const phone = document.getElementById('profile-phone-input').value.trim();
+    if (!name || !phone) {
+        showToast('الرجاء إدخال الاسم ورقم الهاتف');
+        return;
+    }
+    localStorage.setItem('sanadcenter_user', JSON.stringify({ name, phone }));
+    loadProfile();
+    showToast('تم التسجيل بنجاح!');
+}
+
+function logoutProfile() {
+    localStorage.removeItem('sanadcenter_user');
+    loadProfile();
+    showToast('تم تسجيل الخروج');
+}
+
+function showEditProfile() {
+    const userData = JSON.parse(localStorage.getItem('sanadcenter_user') || '{}');
+    document.getElementById('profile-edit-name').value = userData.name || '';
+    document.getElementById('profile-edit-phone').value = userData.phone || '';
+    document.getElementById('profile-edit-form').style.display = 'block';
+}
+
+function saveProfileEdit() {
+    const name = document.getElementById('profile-edit-name').value.trim();
+    const phone = document.getElementById('profile-edit-phone').value.trim();
+    if (!name || !phone) {
+        showToast('الرجاء ملء جميع الحقول');
+        return;
+    }
+    localStorage.setItem('sanadcenter_user', JSON.stringify({ name, phone }));
+    document.getElementById('profile-edit-form').style.display = 'none';
+    loadProfile();
+    showToast('تم حفظ التعديلات');
+}
+
+function loadMyOrders(phone) {
+    const container = document.getElementById('my-orders-list');
+    if (!container) return;
+    container.innerHTML = '<p class="text-center text-on-surface-variant py-8">لا توجد طلبات سابقة</p>';
+}
+
+// ── Back Navigation ──
+function goBack() {
+    if (window.history.length > 1) {
+        window.history.back();
+    } else {
+        navigate('page_0');
+    }
+}
+
+// Handle browser back/forward
+window.addEventListener('popstate', (e) => {
+    if (e.state && e.state.page) {
+        showPage(e.state.page);
+    } else {
+        showPage('page_0');
+    }
+});
+
+// ── Bottom Nav State ──
 function updateBottomNavState(pageId) {
     document.querySelectorAll('.nav-btn').forEach(btn => {
-        const target = btn.getAttribute('data-target');
+        const match = btn.getAttribute('onclick').match(/'([^']+)'/);
+        if (!match) return;
+        const target = match[1];
         if (target === pageId) {
             btn.classList.add('text-primary');
             btn.classList.remove('text-on-surface-variant');
@@ -819,34 +582,23 @@ function updateBottomNavState(pageId) {
     });
 }
 
-function toggleVideoAudio(e) {
-    if (e) e.stopPropagation();
-    const video = document.getElementById('carouselVideo');
-    const btn = document.getElementById('videoAudioBtn');
-    if (!video || !btn) return;
-    video.muted = !video.muted;
-    btn.innerHTML = `<span class="material-symbols-outlined text-xl">${video.muted ? 'volume_off' : 'volume_up'}</span>`;
-}
-
 // ── Initialization ──
 document.addEventListener('DOMContentLoaded', () => {
     fetchData();
     updateCartBadges();
+    updateBottomNavState('page_0');
 });
 
-// Expose functions to window
+// Redefining global window functions for HTML access
 window.navigate = navigate;
-window.showPage = showPage;
 window.goBack = goBack;
 window.filterCategory = filterCategory;
 window.addToCartById = addToCartById;
 window.updateItemQty = updateItemQty;
 window.toggleFavorite = toggleFavorite;
-window.toggleVideoAudio = toggleVideoAudio;
-window.changeSlide = changeSlide;
-window.openCheckoutModal = openCheckoutModal;
-window.closeCheckoutModal = closeCheckoutModal;
-window.submitCheckout = submitCheckout;
 window.loginProfile = loginProfile;
 window.logoutProfile = logoutProfile;
-window.trackOrder = trackOrder;
+window.showEditProfile = showEditProfile;
+window.saveProfileEdit = saveProfileEdit;
+window.renderFavorites = renderFavorites;
+window.loadProfile = loadProfile;
