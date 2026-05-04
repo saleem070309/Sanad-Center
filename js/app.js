@@ -18,6 +18,11 @@ let cart = JSON.parse(localStorage.getItem(STORAGE_KEYS.CART) || '[]');
 let favorites = JSON.parse(localStorage.getItem(STORAGE_KEYS.FAVORITES) || '[]');
 let currentPage = 'page_0';
 
+// -- Location & Map State --
+let selectionMap = null;
+let selectionMarker = null;
+let currentCoords = { lat: 32.5514, lng: 36.0114 }; // Default: Ramtha
+
 // ── Google Drive Image Helper ──
 function getDriveImageUrl(url) {
     if (!url) return 'assets/images/ball.png'; // fallback
@@ -127,11 +132,11 @@ function renderCategories() {
 
     grid.innerHTML = allCategories.map(cat => `
         <button onclick="filterCategory('${cat.name}')"
-            class="bg-white p-6 rounded-2xl flex flex-col items-center justify-center gap-3 transition-all hover:bg-primary-light/20 cursor-pointer group border border-outline w-full shadow-ambient">
+            class="bg-white p-6 rounded-2xl flex flex-col items-center justify-center gap-3 transition-all hover:bg-primary-light/20 cursor-pointer group border border-outline min-w-[120px] flex-shrink-0 shadow-ambient">
             <div class="w-16 h-16 rounded-full bg-primary-light/30 flex items-center justify-center group-hover:scale-110 transition-transform">
                 <span class="material-symbols-outlined text-primary text-3xl">${cat.icon || 'category'}</span>
             </div>
-            <span class="font-bold text-on-surface text-sm">${cat.name}</span>
+            <span class="font-bold text-on-surface text-sm whitespace-nowrap">${cat.name}</span>
         </button>
     `).join('');
 }
@@ -382,9 +387,9 @@ function filterCategory(cat) {
     // Update active button state
     document.querySelectorAll('#listing-category-filters button').forEach(btn => {
         if (btn.textContent === (cat === 'all' ? 'الكل' : cat)) {
-            btn.className = 'bg-primary text-on-primary px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer';
+            btn.className = 'bg-primary text-on-primary px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer whitespace-nowrap';
         } else {
-            btn.className = 'bg-surface-container text-on-surface-variant px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer';
+            btn.className = 'bg-surface-container text-on-surface-variant px-6 py-2 rounded-full font-bold transition-all border-0 cursor-pointer whitespace-nowrap';
         }
     });
 }
@@ -404,7 +409,7 @@ function populateProductDetail(id) {
             </button>
         </div>
         <div class="px-2 space-y-4">
-            <span class="text-xs font-bold text-primary bg-primary-container/30 px-3 py-1 rounded-full">${p.category}</span>
+            <span class="text-xs font-bold text-primary bg-primary-container/30 px-3 py-1 rounded-full whitespace-nowrap">${p.category}</span>
             <h2 class="text-3xl font-black text-on-surface">${p.name}</h2>
             <p class="text-on-surface-variant leading-relaxed">${p.description}</p>
             <div class="flex items-center justify-between mt-6 pt-4 border-t border-outline/20">
@@ -594,6 +599,144 @@ window.navigate = navigate;
 window.goBack = goBack;
 window.filterCategory = filterCategory;
 window.addToCartById = addToCartById;
+// -- Location & Checkout Functions --
+
+async function getMyLocation() {
+    if (!navigator.geolocation) {
+        showToast("عذراً، متصفحك لا يدعم تحديد الموقع");
+        return;
+    }
+
+    showToast("جاري تحديد موقعك...");
+    
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const { latitude, longitude } = position.coords;
+        currentCoords = { lat: latitude, lng: longitude };
+        
+        document.getElementById('checkout-latlng').value = `${latitude},${longitude}`;
+        
+        // Update Address Box
+        document.getElementById('checkout-address-box').classList.remove('hidden');
+        document.getElementById('checkout-address-text').textContent = "جاري جلب العنوان...";
+        
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=ar`);
+            const data = await res.json();
+            const address = data.display_name || `${latitude}, ${longitude}`;
+            document.getElementById('checkout-address-text').textContent = address;
+            document.getElementById('checkout-address').classList.remove('hidden');
+        } catch (err) {
+            document.getElementById('checkout-address-text').textContent = `${latitude}, ${longitude}`;
+            document.getElementById('checkout-address').classList.remove('hidden');
+        }
+    }, (error) => {
+        showToast("فشل تحديد الموقع. يرجى المحاولة يدوياً.");
+    });
+}
+
+function openMapSelection() {
+    const container = document.getElementById('checkout-map-container');
+    container.classList.remove('hidden');
+    
+    if (!selectionMap) {
+        selectionMap = L.map('checkoutSelectionMap', {
+            zoomControl: false
+        }).setView([currentCoords.lat, currentCoords.lng], 15);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(selectionMap);
+        
+        // Use map move to update currentCoords
+        selectionMap.on('move', () => {
+            const center = selectionMap.getCenter();
+            currentCoords = { lat: center.lat, lng: center.lng };
+        });
+    } else {
+        selectionMap.setView([currentCoords.lat, currentCoords.lng], 15);
+    }
+    
+    setTimeout(() => selectionMap.invalidateSize(), 300);
+}
+
+async function confirmMapSelection() {
+    const { lat, lng } = currentCoords;
+    document.getElementById('checkout-latlng').value = `${lat},${lng}`;
+    
+    document.getElementById('checkout-map-container').classList.add('hidden');
+    document.getElementById('checkout-address-box').classList.remove('hidden');
+    document.getElementById('checkout-address-text').textContent = "جاري جلب العنوان...";
+    
+    try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ar`);
+        const data = await res.json();
+        const address = data.display_name || `${lat}, ${lng}`;
+        document.getElementById('checkout-address-text').textContent = address;
+        document.getElementById('checkout-address').classList.remove('hidden');
+    } catch (err) {
+        document.getElementById('checkout-address-text').textContent = `${lat}, ${lng}`;
+        document.getElementById('checkout-address').classList.remove('hidden');
+    }
+}
+
+async function submitOrderToSheet() {
+    const name = document.getElementById('checkout-name').value;
+    const phone = document.getElementById('checkout-phone').value;
+    const addressDetails = document.getElementById('checkout-address').value;
+    const latlng = document.getElementById('checkout-latlng').value;
+    const addressFull = document.getElementById('checkout-address-text').textContent;
+    const notes = document.getElementById('checkout-notes').value;
+
+    if (!name || !phone || (!latlng && !addressDetails)) {
+        showToast("يرجى ملء جميع الخانات الأساسية");
+        return false;
+    }
+
+    const orderData = {
+        action: 'addOrder',
+        customerName: name,
+        customerPhone: phone,
+        governorate: '',
+        address: `${addressFull} | ${addressDetails}`,
+        products: JSON.stringify(cart),
+        total: cart.reduce((sum, i) => sum + (parseFloat(i.price) * i.qty), 0),
+        customerLocation: latlng,
+        notes: notes
+    };
+
+    showToast("جاري إرسال طلبك...");
+
+    try {
+        await fetch(`${API_URL}`, {
+            method: 'POST',
+            mode: 'no-cors',
+            cache: 'no-cache',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(orderData)
+        });
+
+        showToast("تم إرسال طلبك بنجاح! سنتواصل معك قريباً.");
+        
+        // Clear Cart
+        cart = [];
+        saveCart();
+        updateCartBadges();
+        closeCheckoutModal();
+        navigate('page_0');
+        
+        return true;
+    } catch (err) {
+        console.error("Order submission failed:", err);
+        showToast("فشل إرسال الطلب. يرجى المحاولة مرة أخرى.");
+        return false;
+    }
+}
+
+// Redefining global window functions for HTML access
+window.navigate = navigate;
+window.goBack = goBack;
+window.filterCategory = filterCategory;
+window.addToCartById = addToCartById;
 window.updateItemQty = updateItemQty;
 window.toggleFavorite = toggleFavorite;
 window.loginProfile = loginProfile;
@@ -602,3 +745,7 @@ window.showEditProfile = showEditProfile;
 window.saveProfileEdit = saveProfileEdit;
 window.renderFavorites = renderFavorites;
 window.loadProfile = loadProfile;
+window.getMyLocation = getMyLocation;
+window.openMapSelection = openMapSelection;
+window.confirmMapSelection = confirmMapSelection;
+window.submitOrderToSheet = submitOrderToSheet;
