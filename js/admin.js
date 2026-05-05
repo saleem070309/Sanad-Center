@@ -166,7 +166,7 @@ function renderOrdersPage() {
             </div>
             <div class="mb-4">
                 <h4 class="text-sm font-bold text-on-surface mb-1">${o.customerName || 'بدون اسم'}</h4>
-                <p class="text-xs text-primary font-bold mb-2" dir="ltr">${o.customerPhone}</p>
+                <p class="text-xs text-primary font-bold mb-2" dir="ltr">${o.phone || o.customerPhone || 'بدون هاتف'}</p>
                 <div class="text-[11px] text-on-surface-variant leading-relaxed bg-surface p-2 rounded-md">
                     ${o.products.replace(/\|/g, '<br/>')}
                 </div>
