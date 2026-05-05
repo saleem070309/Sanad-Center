@@ -1,72 +1,51 @@
-// سند سنتر — منطق التطبيق (قاعدة بيانات Google Sheets)
-// ── الإعدادات ──
+/**
+ * Sanad Center - Main Application Logic
+ * Handles products, cart, ordering, and user profile.
+ */
+
 const API_URL = 'https://script.google.com/macros/s/AKfycbx6V72d-tWyfPlU7AlA6LSovbdDP-gbRy-gjVnPmMwFoYbf0ub6AcpIomjGTtwN7UpV4g/exec';
 
-const STORAGE_KEYS = {
-    PRODUCTS: 'sanadcenter_products',
-    CATEGORIES: 'sanadcenter_categories',
-    SETTINGS: 'sanadcenter_settings',
-    CART: 'sanadcenter_cart',
-    FAVORITES: 'sanadcenter_favorites'
-};
+// --- Global State ---
+let allProducts = [];
+let categories = [];
+let cart = JSON.parse(localStorage.getItem('sanad_cart') || '[]');
+let currentUser = JSON.parse(localStorage.getItem('sanad_user') || 'null');
+let navigationHistory = ['page_0'];
 
-// ── Helper Function للتخزين الآمن ──
-function safeJSONParse(key, defaultValue) {
-    try {
-        const item = localStorage.getItem(key);
-        return item ? JSON.parse(item) : defaultValue;
-    } catch (e) {
-        console.error(`Error parsing ${key} from localStorage`, e);
-        return defaultValue;
+function normalizePhone(phone) {
+    if (!phone) return '';
+    let p = String(phone).trim().replace(/\s+/g, '');
+    while (p.length > 0 && p.startsWith('0')) {
+        p = p.substring(1);
     }
+    return p;
 }
 
-function formatUserOrderProducts(productsStr) {
-    if (!productsStr) return 'لا يوجد منتجات';
-    try {
-        const products = JSON.parse(productsStr);
-        if (Array.isArray(products)) {
-            return products.map(p => `
-                <div class="flex items-center gap-2 mb-1 last:mb-0">
-                    ${p.image ? `<img src="${getDriveImageUrl(p.image)}" class="w-8 h-8 rounded object-cover border border-outline-variant/30" onerror="this.style.display='none'">` : ''}
-                    <div class="flex-1">
-                        <p class="text-xs font-bold text-on-surface line-clamp-1">${p.name}</p>
-                        <p class="text-[10px] text-on-surface-variant">الكمية: ${p.qty || 1}</p>
-                    </div>
-                </div>
-            `).join('');
-        }
-    } catch (e) {
-        return productsStr.replace(/\|/g, '<br/>');
+function isValidPhone(phone) {
+    return /^07[0-9]{8}$/.test(String(phone).trim());
+}
+
+// --- Initialization ---
+document.addEventListener('DOMContentLoaded', () => {
+    initApp();
+    setupGlobalEventListeners();
+});
+
+async function initApp() {
+    updateCartBadge();
+    renderCart();
+    await fetchData();
+    
+    // Check for user login
+    if (currentUser) {
+        showProfileInfo();
     }
-    return productsStr;
+
+    // Initialize carousel after products (if any are dynamic) or on start
+    initCarousel();
 }
 
-// ── State ──
-let allProducts = safeJSONParse(STORAGE_KEYS.PRODUCTS, []);
-let allCategories = safeJSONParse(STORAGE_KEYS.CATEGORIES, []);
-let allSettings = safeJSONParse(STORAGE_KEYS.SETTINGS, {});
-let cart = safeJSONParse(STORAGE_KEYS.CART, []);
-let favorites = safeJSONParse(STORAGE_KEYS.FAVORITES, []);
-let currentPage = 'page_0';
-let currentCategory = 'all';
-let searchQuery = '';
-
-// ── Google Drive Image Helper ──
-function getDriveImageUrl(url) {
-    if (!url) return 'assets/images/ball.png'; // fallback
-    const trimmed = url.trim();
-    const match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-    if (match) return `https://lh3.googleusercontent.com/d/${match[1]}`;
-    const match2 = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (match2) return `https://lh3.googleusercontent.com/d/${match2[1]}`;
-    return trimmed;
-}
-
-// ── Data Management ──
 async function fetchData() {
-    if (!API_URL) return;
-
     try {
         const [prodRes, catRes, setRes] = await Promise.all([
             fetch(`${API_URL}?action=getProducts`),
@@ -78,626 +57,48 @@ async function fetchData() {
         const catData = await catRes.json();
         const setData = await setRes.json();
 
-        if (prodData.status === 'success') {
-            allProducts = prodData.products.map(p => ({
-                ...p,
-                id: String(p.id),
-                image: getDriveImageUrl(p.image)
-            }));
-            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(allProducts));
-        }
-
-        if (catData.status === 'success') {
-            allCategories = catData.categories || [];
-            localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(allCategories));
-        }
-
-        if (setData.status === 'success') {
-            allSettings = setData.settings || {};
-            localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(allSettings));
-        }
-
-        renderAll();
-        initHeroSlider(); // Initialize slider ONCE after data loads
-        applySettings();
+        if (prodData.status === 'success') allProducts = prodData.products || [];
+        if (catData.status === 'success') categories = catData.categories || [];
+        
+        renderCategories();
+        renderProducts();
+        applySettings(setData.settings);
     } catch (err) {
-        console.error('Failed to fetch data:', err);
+        console.error('Error fetching data:', err);
     }
 }
 
-function applySettings() {
-    // WhatsApp
-    const waLink = document.getElementById('footer-wa-link');
-    const waText = document.getElementById('footer-wa-text');
-    if (allSettings.phone) {
-        // تحويل القيمة لنص أولاً لتجنب الانهيار إذا كانت القيمة رقمية
-        const phoneStr = String(allSettings.phone);
-        const cleanPhone = phoneStr.replace(/\s+/g, '').replace('+', '');
-        if (waLink) waLink.href = `https://wa.me/${cleanPhone}`;
-        if (waText) waText.textContent = phoneStr;
+function applySettings(settings) {
+    if (!settings) return;
+    if (settings.phone) {
+        const waLink = document.getElementById('footer-wa-link');
+        const waText = document.getElementById('footer-wa-text');
+        if (waLink) waLink.href = `https://api.whatsapp.com/send?phone=${settings.phone.replace(/\s+/g, '')}`;
+        if (waText) waText.textContent = settings.phone;
     }
-
-    // Facebook
-    const fbLink = document.getElementById('footer-fb-link');
-    const fbText = document.getElementById('footer-fb-text');
-    if (allSettings.facebook) {
-        if (fbLink) fbLink.href = allSettings.facebook;
+    if (settings.facebook) {
+        const fbLink = document.getElementById('footer-fb-link');
+        if (fbLink) fbLink.href = settings.facebook;
     }
-    if (allSettings.facebook_name) {
-        if (fbText) fbText.textContent = allSettings.facebook_name;
+    if (settings.facebook_name) {
+        const fbText = document.getElementById('footer-fb-text');
+        if (fbText) fbText.textContent = settings.facebook_name;
     }
 }
 
-let heroSliderInitialized = false;
-
-function renderAll() {
-    renderUserProducts(); // Best Sellers
-    renderCategories();
-    renderListingProducts();
-    updateListingCategoryButtons();
-    updateCartBadges();
-}
-
-function initHeroSlider() {
-    if (heroSliderInitialized) return;
-    renderHeroSlider();
-    heroSliderInitialized = true;
-    if (typeof initCarousel === 'function') {
-        initCarousel();
-    }
-}
-
-// ── UI Rendering ──
-
-function renderCategories() {
-    const grid = document.getElementById('categories-grid');
-    if (!grid) return;
-
-    if (allCategories.length === 0) {
-        grid.innerHTML = '<p class="col-span-full text-center py-4">جاري تحميل الأقسام...</p>';
-        return;
-    }
-
-    grid.innerHTML = allCategories.map(cat => `
-        <button onclick="filterCategory('${cat.name}')"
-            class="bg-white p-6 rounded-2xl flex flex-col items-center justify-center gap-3 transition-all hover:bg-primary-light/20 cursor-pointer group border border-outline min-w-[120px] flex-shrink-0 shadow-ambient">
-            <div class="w-16 h-16 rounded-full bg-primary-light/30 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <span class="material-symbols-outlined text-primary text-3xl">${cat.icon || 'category'}</span>
-            </div>
-            <span class="font-bold text-on-surface text-sm whitespace-nowrap">${cat.name}</span>
-        </button>
-    `).join('');
-}
-
-function renderHeroSlider() {
-    const wrapper = document.getElementById('carouselWrapper');
-    const dotsContainer = document.getElementById('carouselDots');
-    if (!wrapper || !dotsContainer) return;
-
-    const sliderProducts = allProducts.filter(p => p.inSlider);
-
-    let wrapperHTML = `
-        <div class="carousel-slide min-w-full h-full relative" data-slide="0" style="display: block;">
-            <video id="carouselVideo" class="w-full h-full object-cover" playsinline muted autoplay loop>
-                <source src="assets/videos/demo.mp4" type="video/mp4">
-            </video>
-            <div class="absolute inset-0 bg-black/20 pointer-events-none"></div>
-            <div class="absolute bottom-0 right-0 p-8 text-white text-right max-w-lg pointer-events-none">
-                <h2 class="text-3xl md:text-5xl font-black mb-4 leading-tight">شاهد مجموعتنا الجديدة</h2>
-                <p class="text-white/80 mb-6 font-medium">تجربة تسوق فريدة تنتظرك.</p>
-            </div>
-            <button id="videoAudioBtn" onclick="toggleVideoAudio(event)" class="absolute bottom-8 left-8 w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white border-0 cursor-pointer z-10 hover:bg-white/40 transition">
-                <span class="material-symbols-outlined text-xl">volume_off</span>
-            </button>
-        </div>
-    `;
-
-    wrapperHTML += `
-        <div class="carousel-slide min-w-full h-full relative" data-slide="1" style="display: none;">
-            <img class="w-full h-full object-cover" src="assets/images/hero.png" alt="سند سنتر" />
-            <div class="absolute inset-0 bg-gradient-to-t from-primary/80 via-primary/20 to-transparent pointer-events-none"></div>
-            <div class="absolute bottom-0 right-0 p-8 text-white text-right max-w-lg pointer-events-none">
-                <span class="inline-block px-4 py-1 rounded-full bg-accent text-white text-xs font-bold tracking-widest mb-4">جديد</span>
-                <h2 class="text-3xl md:text-5xl font-black mb-4 leading-tight">اجعل منزلك ذكياً وعصرياً</h2>
-                <p class="text-white/80 mb-6 font-medium">اكتشف تشكيلتنا الجديدة من الأجهزة المنزلية المتطورة.</p>
-                <button onclick="event.stopPropagation(); navigate('page_1')"
-                    class="bg-accent text-white px-8 py-3 rounded-xl font-bold transition-transform active:scale-95 shadow-ambient border-0 pointer-events-auto cursor-pointer">تسوق الآن</button>
-            </div>
-        </div>
-    `;
-
-    let dotsHTML = `
-        <div class="carousel-dot w-8 h-2.5 rounded-full bg-primary transition-all duration-300 cursor-pointer" onclick="changeSlide(0)"></div>
-        <div class="carousel-dot w-2.5 h-2.5 rounded-full bg-white/50 transition-all duration-300 cursor-pointer" onclick="changeSlide(1)"></div>
-    `;
-
-    sliderProducts.forEach((p, idx) => {
-        const slideIdx = idx + 2; 
-        wrapperHTML += `
-            <div class="carousel-slide min-w-full h-full relative" data-slide="${slideIdx}" style="display: none;">
-                <img class="w-full h-full object-cover" src="${p.image}" alt="${p.name}" onerror="this.src='assets/images/hero.png'" />
-                <div class="absolute inset-0 bg-gradient-to-t from-primary/80 via-primary/20 to-transparent pointer-events-none"></div>
-                <div class="absolute bottom-0 right-0 p-8 text-white text-right max-w-lg pointer-events-none">
-                    <span class="inline-block px-4 py-1 rounded-full bg-accent text-white text-xs font-bold tracking-widest mb-4">مميز</span>
-                    <h2 class="text-3xl md:text-5xl font-black mb-4 leading-tight">${p.name}</h2>
-                    <p class="text-white/80 mb-6 font-medium line-clamp-2">${p.description}</p>
-                    <button onclick="event.stopPropagation(); navigate('page_2', '${p.id}')"
-                        class="bg-accent text-white px-8 py-3 rounded-xl font-bold transition-transform active:scale-95 shadow-ambient border-0 pointer-events-auto cursor-pointer">اكتشف المزيد</button>
-                </div>
-            </div>
-        `;
-        dotsHTML += `<div class="carousel-dot w-2.5 h-2.5 rounded-full bg-white/50 transition-all duration-300 cursor-pointer" onclick="changeSlide(${slideIdx})"></div>`;
-    });
-
-    wrapper.innerHTML = wrapperHTML;
-    dotsContainer.innerHTML = dotsHTML;
-}
-
-// ── Slider Functions (كانت مفقودة) ──
-function changeSlide(index) {
-    const slides = document.querySelectorAll('.carousel-slide');
-    const dots = document.querySelectorAll('.carousel-dot');
-    
-    if (!slides.length) return;
-    
-    slides.forEach((slide, i) => {
-        slide.style.display = i === index ? 'block' : 'none';
-    });
-    
-    dots.forEach((dot, i) => {
-        if (i === index) {
-            dot.className = 'carousel-dot w-8 h-2.5 rounded-full bg-primary transition-all duration-300 cursor-pointer';
-        } else {
-            dot.className = 'carousel-dot w-2.5 h-2.5 rounded-full bg-white/50 transition-all duration-300 cursor-pointer';
-        }
-    });
-}
-
-function toggleVideoAudio(e) {
-    if (e) e.stopPropagation();
-    const video = document.getElementById('carouselVideo');
-    const btn = document.getElementById('videoAudioBtn');
-    if (video && btn) {
-        video.muted = !video.muted;
-        btn.innerHTML = video.muted 
-            ? '<span class="material-symbols-outlined text-xl">volume_off</span>' 
-            : '<span class="material-symbols-outlined text-xl">volume_up</span>';
-    }
-}
-
-function renderUserProducts() {
-    const grid = document.getElementById('user-products-grid');
-    if (!grid) return;
-
-    const bestSellers = allProducts.filter(p => p.isBestSeller);
-    const products = bestSellers.length > 0 ? bestSellers : allProducts.slice(0, 8);
-
-    if (products.length === 0) {
-        grid.innerHTML = '<p class="text-center py-12 text-on-surface-variant font-bold min-w-full">جاري تحميل المنتجات...</p>';
-        return;
-    }
-
-    grid.innerHTML = products.map(p => `
-        <div onclick="navigate('page_2', '${p.id}')"
-            class="snap-start min-w-[220px] bg-surface-container-low rounded-xl p-4 cursor-pointer hover:bg-surface-container transition-colors relative shadow-none">
-            <img src="${p.image}" class="w-full h-40 object-cover rounded-xl mb-3 shadow-inner" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
-            <div>
-                <h4 class="font-bold text-on-surface truncate text-lg">${p.name}</h4>
-                <span class="text-sm font-bold text-primary mb-2 block mt-1">${p.price} د.أ</span>
-                <div class="flex items-center justify-between gap-1 mt-2">
-                    <div class="flex items-center gap-1">
-                        <button class="w-7 h-7 rounded-full flex items-center justify-center bg-surface-container hover:bg-surface-container-high text-primary font-bold transition border-0 cursor-pointer" onclick="event.stopPropagation(); updateItemQty('${p.id}', -1)">-</button>
-                        <span class="w-6 h-7 rounded-full flex items-center justify-center bg-surface text-xs font-bold">${getCartQty(p.id)}</span>
-                        <button class="w-7 h-7 rounded-full flex items-center justify-center bg-surface-container hover:bg-surface-container-high text-primary font-bold transition border-0 cursor-pointer" onclick="event.stopPropagation(); updateItemQty('${p.id}', 1)">+</button>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <button onclick="event.stopPropagation(); toggleFavorite('${p.id}')" class="w-7 h-7 flex items-center justify-center rounded-full bg-tertiary-container/30 text-tertiary hover:bg-tertiary-container/50 transition-colors border-0 cursor-pointer">
-                            <span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' ${isFavorite(p.id) ? 1 : 0};">favorite</span>
-                        </button>
-                        <button onclick="event.stopPropagation(); addToCartById('${p.id}')" class="w-7 h-7 flex items-center justify-center rounded-full bg-primary text-on-primary hover:opacity-90 transition-opacity border-0 cursor-pointer">
-                            <span class="material-symbols-outlined text-[16px]">shopping_cart</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
-function updateListingCategoryButtons() {
-    const container = document.getElementById('listing-category-filters');
-    if (!container) return;
-
-    container.innerHTML = `
-        <button onclick="filterCategory('all')" class="${currentCategory === 'all' ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'} px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap shadow-md border-0 cursor-pointer">الكل</button>
-        ${allCategories.map(cat => `
-            <button onclick="filterCategory('${cat.name}')" class="${currentCategory === cat.name ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'} px-6 py-2 rounded-full font-bold transition-all whitespace-nowrap border-0 cursor-pointer">${cat.name}</button>
-        `).join('')}
-    `;
-}
-
-// ── Navigation ──
-function navigate(pageId, productId = null) {
-    if (currentPage === pageId && !productId) return;
-    if (pageId === 'page_2' && productId) populateProductDetail(productId);
-    history.pushState({ page: pageId, productId }, "", "#" + pageId);
-    showPage(pageId);
-}
-
-function showPage(pageId) {
-    document.querySelectorAll('.app-page').forEach(page => page.style.display = 'none');
+// --- Navigation ---
+window.navigate = function(pageId) {
+    document.querySelectorAll('.app-page').forEach(p => p.style.display = 'none');
     const target = document.getElementById(pageId);
-    if (target) {
-        target.style.display = 'block';
-        window.scrollTo(0, 0);
-        currentPage = pageId;
-        updateBottomNavState(pageId);
-        if (pageId === 'page_3') renderCart();
-        if (pageId === 'page_6') renderFavorites();
-        if (pageId === 'page_1') renderListingProducts(); // Refresh listings when visited
-        if (pageId === 'page_7') loadProfile();
-    }
-}
-
-function getCartQty(id) {
-    const item = cart.find(i => i.id === id);
-    return item ? item.qty : 0;
-}
-
-function updateItemQty(id, delta) {
-    const p = allProducts.find(x => x.id === id);
-    if (!p) return;
-
-    let item = cart.find(i => i.id === id);
-    if (item) {
-        item.qty += delta;
-        if (item.qty <= 0) cart = cart.filter(i => i.id !== id);
-    } else if (delta > 0) {
-        cart.push({ ...p, qty: delta }); // Ensure correct delta
-    }
-
-    saveCart();
-    renderUserProducts();
+    if (target) target.style.display = 'block';
     
-    // Only re-render listings and cart if currently on those pages to improve performance
-    if (currentPage === 'page_1') renderListingProducts();
-    if (currentPage === 'page_3') renderCart();
+    if (navigationHistory[navigationHistory.length - 1] !== pageId) {
+        navigationHistory.push(pageId);
+    }
     
-    updateCartBadges();
-}
-
-function addToCartById(id) {
-    updateItemQty(id, 1);
-    showToast('تمت الإضافة إلى السلة');
-}
-
-function toggleFavorite(id) {
-    if (favorites.includes(id)) {
-        favorites = favorites.filter(f => f !== id);
-    } else {
-        favorites.push(id);
-    }
-    saveFavorites();
-    renderUserProducts();
-    if (currentPage === 'page_1') renderListingProducts();
-    if (currentPage === 'page_6') renderFavorites();
-}
-
-function isFavorite(id) {
-    return favorites.includes(id);
-}
-
-function saveCart() {
-    localStorage.setItem(STORAGE_KEYS.CART, JSON.stringify(cart));
-}
-
-function saveFavorites() {
-    localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(favorites));
-}
-
-function updateCartBadges() {
-    const count = cart.reduce((sum, i) => sum + i.qty, 0);
-    document.querySelectorAll('.cart-badge').forEach(b => {
-        b.textContent = count;
-        b.style.display = count > 0 ? 'flex' : 'none';
-    });
-}
-
-// ── وظيفة البحث المفقودة ──
-function updateSearch(query) {
-    searchQuery = query ? query.toLowerCase() : '';
-    if (currentPage !== 'page_1') navigate('page_1');
-    renderListingProducts();
-}
-
-function renderListingProducts() {
-    const grid = document.getElementById('listing-products-grid');
-    if (!grid) return;
-
-    let filtered = allProducts;
-    if (currentCategory !== 'all') {
-        filtered = allProducts.filter(p => p.category === currentCategory);
-    }
-
-    if (searchQuery) {
-        filtered = filtered.filter(p => 
-            (p.name && p.name.toLowerCase().includes(searchQuery)) || 
-            (p.description && p.description.toLowerCase().includes(searchQuery))
-        );
-    }
-
-    if (filtered.length === 0) {
-        grid.innerHTML = '<p class="col-span-full text-center py-12 text-on-surface-variant font-bold">لا توجد منتجات تطابق بحثك</p>';
-        return;
-    }
-
-    grid.innerHTML = filtered.map(p => `
-        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm cursor-pointer hover:shadow-md transition-shadow relative">
-            <button onclick="event.stopPropagation(); toggleFavorite('${p.id}')" class="absolute top-4 left-4 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center border-0 cursor-pointer z-10">
-                <span class="material-symbols-outlined text-tertiary text-[18px]" style="font-variation-settings: 'FILL' ${isFavorite(p.id) ? 1 : 0};">favorite</span>
-            </button>
-            <img src="${p.image}" class="w-full h-48 object-cover rounded-xl mb-4" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
-            <h4 class="font-bold text-on-surface mb-1">${p.name}</h4>
-            <p class="text-sm text-on-surface-variant line-clamp-2 mb-4">${p.description}</p>
-            <div class="flex justify-between items-center">
-                <span class="text-lg font-black text-primary">${p.price} د.أ</span>
-                <button onclick="event.stopPropagation(); addToCartById('${p.id}')" class="bg-primary text-white w-10 h-10 rounded-full flex items-center justify-center border-0 cursor-pointer">
-                    <span class="material-symbols-outlined">add_shopping_cart</span>
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
-
-function filterCategory(cat) {
-    currentCategory = cat;
-    if (currentPage !== 'page_1') navigate('page_1');
-    renderListingProducts();
-    updateListingCategoryButtons(); // Refresh active button styles
-}
-
-function populateProductDetail(id) {
-    const p = allProducts.find(x => x.id === id);
-    if (!p) return;
-
-    const container = document.getElementById('product-detail-content');
-    if (!container) return;
-
-    container.innerHTML = `
-        <div class="relative w-full h-[350px] rounded-2xl overflow-hidden mb-6">
-            <img src="${p.image}" class="w-full h-full object-cover" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
-            <button onclick="toggleFavorite('${p.id}')" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white/80 backdrop-blur flex items-center justify-center border-0 cursor-pointer">
-                <span class="material-symbols-outlined text-tertiary" style="font-variation-settings: 'FILL' ${isFavorite(p.id) ? 1 : 0};">favorite</span>
-            </button>
-        </div>
-        <div class="px-2 space-y-4">
-            <span class="text-xs font-bold text-primary bg-primary-container/30 px-3 py-1 rounded-full whitespace-nowrap">${p.category}</span>
-            <h2 class="text-3xl font-black text-on-surface">${p.name}</h2>
-            <p class="text-on-surface-variant leading-relaxed">${p.description}</p>
-            <div class="flex items-center justify-between mt-6 pt-4 border-t border-outline/20">
-                <span class="text-3xl font-black text-primary">${p.price} د.أ</span>
-                <button onclick="addToCartById('${p.id}')"
-                    class="bg-primary text-on-primary px-8 py-3 rounded-xl font-bold transition-transform active:scale-95 border-0 cursor-pointer flex items-center gap-2">
-                    <span class="material-symbols-outlined">add_shopping_cart</span>
-                    أضف للسلة
-                </button>
-            </div>
-        </div>
-    `;
-}
-
-function renderCart() {
-    const container = document.getElementById('cart-items-container');
-    if (!container) return;
-
-    if (cart.length === 0) {
-        container.innerHTML = '<p class="text-center py-12 text-on-surface-variant">السلة فارغة</p>';
-        document.getElementById('cart-total').textContent = '0.00 د.أ';
-        return;
-    }
-
-    container.innerHTML = cart.map(item => `
-        <div class="flex gap-4 items-center bg-white p-4 rounded-2xl border border-outline">
-            <img src="${item.image}" class="w-20 h-20 object-cover rounded-xl" alt="${item.name}">
-            <div class="flex-1">
-                <h4 class="font-bold text-on-surface">${item.name}</h4>
-                <p class="text-primary font-bold">${item.price} د.أ</p>
-                <div class="flex items-center gap-3 mt-2">
-                    <button onclick="updateItemQty('${item.id}', -1)" class="w-8 h-8 rounded-full bg-surface-container border-0 cursor-pointer flex justify-center items-center font-bold">-</button>
-                    <span class="font-bold">${item.qty}</span>
-                    <button onclick="updateItemQty('${item.id}', 1)" class="w-8 h-8 rounded-full bg-surface-container border-0 cursor-pointer flex justify-center items-center font-bold">+</button>
-                </div>
-            </div>
-            <button onclick="updateItemQty('${item.id}', -${item.qty})" class="text-error border-0 bg-transparent cursor-pointer hover:bg-error/10 p-2 rounded-full transition">
-                <span class="material-symbols-outlined">delete</span>
-            </button>
-        </div>
-    `).join('');
-
-    const total = cart.reduce((sum, i) => sum + ((parseFloat(i.price) || 0) * i.qty), 0);
-    document.getElementById('cart-total').textContent = total.toFixed(2) + ' د.أ';
-}
-
-function showToast(msg) {
-    const toast = document.createElement('div');
-    toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-6 py-3 rounded-full text-sm font-bold shadow-lg z-[1000] transition-opacity duration-300';
-    toast.textContent = msg;
-    document.body.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 300);
-    }, 2000);
-}
-
-// ── Favorites Rendering ──
-function renderFavorites() {
-    const grid = document.getElementById('favorites-grid');
-    if (!grid) return;
-
-    const favProducts = allProducts.filter(p => favorites.includes(p.id));
-
-    if (favProducts.length === 0) {
-        grid.innerHTML = '<p class="col-span-full text-center py-12 text-on-surface-variant font-bold">لم تضف أي منتج للمفضلة بعد</p>';
-        return;
-    }
-
-    grid.innerHTML = favProducts.map(p => `
-        <div onclick="navigate('page_2', '${p.id}')" class="bg-white rounded-2xl p-4 border border-outline shadow-sm cursor-pointer hover:shadow-md transition-shadow relative">
-            <button onclick="event.stopPropagation(); toggleFavorite('${p.id}')" class="absolute top-2 left-2 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center border-0 cursor-pointer z-10">
-                <span class="material-symbols-outlined text-tertiary text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-            </button>
-            <img src="${p.image}" class="w-full h-40 object-cover rounded-xl mb-3" alt="${p.name}" onerror="this.src='assets/images/ball.png'">
-            <h4 class="font-bold text-on-surface truncate">${p.name}</h4>
-            <span class="text-sm font-bold text-primary">${p.price} د.أ</span>
-        </div>
-    `).join('');
-}
-
-// ── Profile Functions ──
-function loadProfile() {
-    const userData = safeJSONParse('sanadcenter_user', null);
-    if (userData) {
-        document.getElementById('profile-login-section').style.display = 'none';
-        document.getElementById('profile-info-section').style.display = 'block';
-        document.getElementById('profile-display-name').textContent = userData.name;
-        document.getElementById('profile-display-phone').textContent = userData.phone;
-        const initials = userData.name.split(' ').map(w => w[0]).join('').substring(0, 2);
-        document.getElementById('profile-avatar').textContent = initials;
-        loadMyOrders(userData.phone);
-    } else {
-        document.getElementById('profile-login-section').style.display = 'block';
-        document.getElementById('profile-info-section').style.display = 'none';
-    }
-}
-
-function loginProfile() {
-    const name = document.getElementById('profile-name-input').value.trim();
-    const phone = document.getElementById('profile-phone-input').value.trim();
-    if (!name || !phone) {
-        showToast('الرجاء إدخال الاسم ورقم الهاتف');
-        return;
-    }
-    localStorage.setItem('sanadcenter_user', JSON.stringify({ name, phone }));
-    loadProfile();
-    showToast('تم التسجيل بنجاح!');
-}
-
-function logoutProfile() {
-    localStorage.removeItem('sanadcenter_user');
-    loadProfile();
-    showToast('تم تسجيل الخروج');
-}
-
-function showEditProfile() {
-    const userData = safeJSONParse('sanadcenter_user', {});
-    document.getElementById('profile-edit-name').value = userData.name || '';
-    document.getElementById('profile-edit-phone').value = userData.phone || '';
-    document.getElementById('profile-edit-form').style.display = 'block';
-}
-
-function saveProfileEdit() {
-    const name = document.getElementById('profile-edit-name').value.trim();
-    const phone = document.getElementById('profile-edit-phone').value.trim();
-    if (!name || !phone) {
-        showToast('الرجاء ملء جميع الحقول');
-        return;
-    }
-    localStorage.setItem('sanadcenter_user', JSON.stringify({ name, phone }));
-    document.getElementById('profile-edit-form').style.display = 'none';
-    loadProfile();
-    showToast('تم حفظ التعديلات');
-}
-
-async function loadMyOrders(phone) {
-    const container = document.getElementById('my-orders-list');
-    if (!container) return;
-
-    container.innerHTML = `
-        <div class="flex flex-col items-center justify-center py-12 gap-3">
-            <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-            <p class="text-xs text-on-surface-variant font-bold">جاري تحميل طلباتك...</p>
-        </div>
-    `;
-
-    try {
-        const res = await fetch(`${API_URL}?action=getMyOrders&phone=${phone}`);
-        const data = await res.json();
-
-        if (data.status === 'success' && data.orders && data.orders.length > 0) {
-            container.innerHTML = data.orders.map(o => {
-                const statusColors = {
-                    'جديد': 'bg-blue-100 text-blue-700',
-                    'يُحضّر': 'bg-amber-100 text-amber-700',
-                    'في الطريق': 'bg-green-100 text-green-700',
-                    'تم التوصيل': 'bg-gray-100 text-gray-700',
-                    'ملغي': 'bg-red-100 text-red-700'
-                };
-                const colorClass = statusColors[o.orderStatus] || 'bg-surface-container text-on-surface-variant';
-                
-                const dateObj = new Date(o.date);
-                const dateStr = isNaN(dateObj) ? o.date : dateObj.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' });
-
-                return `
-                    <div class="bg-surface-container-lowest p-4 rounded-xl shadow-sm border border-outline-variant/30 mb-4">
-                        <div class="flex justify-between items-start mb-3">
-                            <div>
-                                <span class="text-[10px] text-on-surface-variant font-bold block mb-1">رقم الطلب: #${o.orderId}</span>
-                                <span class="text-[10px] text-on-surface-variant/70">${dateStr}</span>
-                            </div>
-                            <span class="text-[10px] font-bold px-2 py-1 rounded-full ${colorClass}">${o.orderStatus}</span>
-                        </div>
-                        <div class="bg-surface p-2 rounded-lg mb-3">
-                            ${formatUserOrderProducts(o.products)}
-                        </div>
-                        <div class="flex justify-between items-center pt-2 border-t border-outline-variant/10">
-                            <span class="text-xs text-on-surface-variant">إجمالي المبلغ</span>
-                            <span class="text-sm font-bold text-primary">${o.total}</span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        } else {
-            container.innerHTML = `
-                <div class="text-center py-12 px-6">
-                    <div class="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mx-auto mb-4 text-on-surface-variant/30">
-                        <span class="material-symbols-outlined text-4xl">shopping_bag</span>
-                    </div>
-                    <p class="text-on-surface-variant font-bold text-sm mb-1">لا توجد طلبات سابقة</p>
-                    <p class="text-[11px] text-on-surface-variant/70">اطلب الآن لتظهر طلباتك هنا</p>
-                </div>
-            `;
-        }
-    } catch (e) {
-        console.error("Error loading my orders:", e);
-        container.innerHTML = '<p class="text-center text-red-500 py-8 text-xs font-bold">خطأ في تحميل البيانات. يرجى المحاولة لاحقاً.</p>';
-    }
-}
-
-// ── Back Navigation ──
-function goBack() {
-    if (window.history.length > 1) {
-        window.history.back();
-    } else {
-        navigate('page_0');
-    }
-}
-
-// Handle browser back/forward
-window.addEventListener('popstate', (e) => {
-    if (e.state && e.state.page) {
-        showPage(e.state.page);
-    } else {
-        showPage('page_0');
-    }
-});
-
-// ── Bottom Nav State ──
-function updateBottomNavState(pageId) {
+    // Update active state in bottom nav
     document.querySelectorAll('.nav-btn').forEach(btn => {
-        const match = btn.getAttribute('onclick').match(/'([^']+)'/);
-        if (!match) return;
-        const target = match[1];
-        if (target === pageId) {
+        if (btn.getAttribute('data-target') === pageId) {
             btn.classList.add('text-primary');
             btn.classList.remove('text-on-surface-variant');
         } else {
@@ -705,29 +106,1040 @@ function updateBottomNavState(pageId) {
             btn.classList.add('text-on-surface-variant');
         }
     });
+
+    window.scrollTo(0, 0);
+
+    if (pageId === 'page_7' && currentUser) {
+        fetchMyOrders();
+    }
+
+    const globalNav = document.getElementById('global-nav');
+    if (globalNav) {
+        if (pageId === 'page_2') {
+            globalNav.style.display = 'none';
+        } else {
+            globalNav.style.display = 'block';
+        }
+    }
+};
+
+window.goBack = function() {
+    if (navigationHistory.length > 1) {
+        navigationHistory.pop();
+        const prevPage = navigationHistory[navigationHistory.length - 1];
+        navigate(prevPage);
+    } else {
+        navigate('page_0');
+    }
+};
+
+// --- Rendering ---
+function renderCategories() {
+    const homeGrid = document.getElementById('categories-grid');
+    const listingFilters = document.getElementById('listing-category-filters');
+    
+    // 1. Populate Home Grid
+    if (homeGrid) {
+        homeGrid.innerHTML = categories.map(cat => `
+            <div onclick="filterCategory('${cat.name}')" 
+                 class="flex-shrink-0 w-24 flex flex-col items-center gap-2 cursor-pointer group">
+                <div class="w-16 h-16 rounded-2xl bg-surface-container flex items-center justify-center group-hover:bg-primary-light/30 transition-colors">
+                    <span class="material-symbols-outlined text-primary text-3xl">${cat.icon || 'category'}</span>
+                </div>
+                <span class="text-xs font-bold text-on-surface-variant text-center leading-tight">${cat.name}</span>
+            </div>
+        `).join('');
+    }
+
+    // 2. Populate Listing Filters
+    if (listingFilters) {
+        let html = `
+            <button onclick="filterCategory('all')"
+                class="snap-start whitespace-nowrap px-6 py-2.5 rounded-full bg-primary text-white font-bold shadow-ambient transition-transform active:scale-95 border-0 cursor-pointer hover:bg-primary/90">الكل</button>
+        `;
+        html += categories.map(cat => `
+            <button onclick="filterCategory('${cat.name}')"
+                class="snap-start whitespace-nowrap px-6 py-2.5 rounded-full bg-white text-on-surface-variant font-semibold border border-outline hover:bg-primary-light/20 transition-colors cursor-pointer">${cat.name}</button>
+        `).join('');
+        listingFilters.innerHTML = html;
+    }
 }
 
-// ── Initialization ──
-document.addEventListener('DOMContentLoaded', () => {
-    fetchData();
-    updateCartBadges();
-    updateBottomNavState('page_0');
-});
+window.filterCategory = function(catName) {
+    navigate('page_1');
+    renderProducts(catName);
+    
+    // Update listing filters
+    const filters = document.getElementById('listing-category-filters');
+    if (filters) {
+        filters.querySelectorAll('button').forEach(btn => {
+            const isSelected = btn.textContent.trim() === catName || (catName === 'all' && btn.textContent.trim() === 'الكل');
+            if (isSelected) {
+                btn.classList.add('bg-primary', 'text-white', 'hover:bg-primary/90');
+                btn.classList.remove('bg-white', 'text-on-surface-variant', 'hover:bg-primary-light/20');
+            } else {
+                btn.classList.remove('bg-primary', 'text-white', 'hover:bg-primary/90');
+                btn.classList.add('bg-white', 'text-on-surface-variant', 'hover:bg-primary-light/20');
+            }
+        });
+    }
+};
 
-// ── Window Bindings ──
-// لتتمكن عناصر HTML من استدعاء هذه الدوال مباشرة
-window.navigate = navigate;
-window.goBack = goBack;
-window.filterCategory = filterCategory;
-window.addToCartById = addToCartById;
-window.updateItemQty = updateItemQty;
-window.toggleFavorite = toggleFavorite;
-window.loginProfile = loginProfile;
-window.logoutProfile = logoutProfile;
-window.showEditProfile = showEditProfile;
-window.saveProfileEdit = saveProfileEdit;
-window.renderFavorites = renderFavorites;
-window.loadProfile = loadProfile;
-window.changeSlide = changeSlide;
-window.toggleVideoAudio = toggleVideoAudio;
-window.updateSearch = updateSearch;
+function renderProducts(filter = 'all') {
+    const homeGrid = document.getElementById('user-products-grid');
+    const listingGrid = document.getElementById('listing-products-grid');
+    
+    let filtered = allProducts;
+    if (filter !== 'all') {
+        filtered = allProducts.filter(p => p.category === filter);
+    }
+
+    const productHTML = (p) => `
+        <div onclick="populateProductDetail('${p.id}')" class="min-w-[200px] w-full bg-surface-container-low rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer snap-start">
+            <div class="relative h-48 overflow-hidden">
+                <img src="${getDriveImageUrl(p.image)}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/400x400/f1f5f9/1e3a8a?text=${encodeURIComponent(p.name)}'">
+                ${p.isBestSeller ? '<span class="absolute top-3 right-3 bg-accent text-white text-[10px] font-bold px-2 py-1 rounded-full">الأكثر مبيعاً</span>' : ''}
+            </div>
+            <div class="p-4">
+                <h4 class="font-bold text-on-surface text-sm line-clamp-1 mb-1">${p.name}</h4>
+                <p class="text-[10px] text-on-surface-variant mb-3">${p.category}</p>
+                <div class="flex justify-between items-center">
+                    <span class="text-primary font-black">${p.price} <small class="text-[10px] font-normal">د.أ</small></span>
+                    <button onclick="event.stopPropagation(); addToCart('${p.id}')" class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center border-0 cursor-pointer active:scale-90 transition-transform">
+                        <span class="material-symbols-outlined text-sm">add_shopping_cart</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    if (homeGrid && filter === 'all') {
+        const bestSellers = allProducts.filter(p => p.isBestSeller);
+        homeGrid.innerHTML = bestSellers.map(productHTML).join('');
+    }
+    
+    if (listingGrid) {
+        listingGrid.innerHTML = filtered.map(productHTML).join('');
+    }
+}
+
+window.populateProductDetail = function(id) {
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    
+    const container = document.getElementById('product-detail-content');
+    if (!container) return;
+    
+    container.innerHTML = `
+        <div class="space-y-8">
+            <div class="relative h-[400px] -mx-4 md:mx-0 md:rounded-3xl overflow-hidden shadow-ambient">
+                <img src="${getDriveImageUrl(p.image)}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/800x800/f1f5f9/1e3a8a?text=${encodeURIComponent(p.name)}'">
+                <button onclick="toggleFavorite('${p.id}')" class="absolute top-6 left-6 w-12 h-12 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center text-white border-0 cursor-pointer">
+                    <span class="material-symbols-outlined ${isFavorite(p.id) ? 'fill-1 text-accent' : ''}">favorite</span>
+                </button>
+            </div>
+            
+            <div class="px-2">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <span class="text-xs font-bold text-primary bg-primary-light/30 px-3 py-1 rounded-full mb-3 inline-block">${p.category}</span>
+                        <h2 class="text-3xl font-black text-on-surface leading-tight">${p.name}</h2>
+                    </div>
+                    <div class="text-left">
+                        <span class="text-4xl font-black text-primary">${p.price}</span>
+                        <span class="text-sm font-bold text-on-surface-variant block">د.أ</span>
+                    </div>
+                </div>
+                
+                <p class="text-on-surface-variant leading-relaxed text-lg mb-8">${p.description || 'لا يوجد وصف متاح لهذا المنتج.'}</p>
+                
+                <div class="grid grid-cols-3 gap-4 mb-10">
+                    <div class="bg-surface-container rounded-2xl p-4 text-center">
+                        <span class="material-symbols-outlined text-primary mb-1">verified</span>
+                        <p class="text-[10px] font-bold text-on-surface-variant uppercase">أصلي 100%</p>
+                    </div>
+                    <div class="bg-surface-container rounded-2xl p-4 text-center">
+                        <span class="material-symbols-outlined text-primary mb-1">local_shipping</span>
+                        <p class="text-[10px] font-bold text-on-surface-variant uppercase">توصيل سريع</p>
+                    </div>
+                    <div class="bg-surface-container rounded-2xl p-4 text-center">
+                        <span class="material-symbols-outlined text-primary mb-1">workspace_premium</span>
+                        <p class="text-[10px] font-bold text-on-surface-variant uppercase">كفالة ذهبية</p>
+                    </div>
+                </div>
+                
+                <div class="mt-12 bg-surface-container rounded-3xl p-6 border border-outline-variant/30 shadow-sm mb-10">
+                    <div class="flex flex-col sm:flex-row gap-4 items-center">
+                        <div class="flex items-center bg-white rounded-2xl px-4 py-2 shadow-sm border border-outline/10">
+                            <button onclick="changeQtyDetail(-1)" class="w-12 h-12 flex items-center justify-center text-primary border-0 bg-transparent cursor-pointer hover:bg-primary-light/10 rounded-full transition-colors"><span class="material-symbols-outlined text-2xl">remove</span></button>
+                            <span id="detail-qty" class="w-16 text-center font-black text-xl">1</span>
+                            <button onclick="changeQtyDetail(1)" class="w-12 h-12 flex items-center justify-center text-primary border-0 bg-transparent cursor-pointer hover:bg-primary-light/10 rounded-full transition-colors"><span class="material-symbols-outlined text-2xl">add</span></button>
+                        </div>
+                        <button onclick="addToCart('${p.id}', parseInt(document.getElementById('detail-qty').textContent))" class="w-full sm:flex-1 bg-primary text-on-primary py-5 rounded-2xl font-bold text-xl shadow-ambient active:scale-95 transition-all border-0 cursor-pointer flex items-center justify-center gap-3">
+                            <span class="material-symbols-outlined">shopping_cart</span>
+                            إضافة للسلة
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    navigate('page_2');
+};
+
+window.changeQtyDetail = function(delta) {
+    const el = document.getElementById('detail-qty');
+    let qty = parseInt(el.textContent);
+    qty = Math.max(1, qty + delta);
+    el.textContent = qty;
+};
+
+// --- Cart Logic ---
+window.addToCart = function(id, qty = 1) {
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    
+    const existing = cart.find(x => x.id === id);
+    if (existing) {
+        existing.qty += qty;
+    } else {
+        cart.push({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            image: p.image,
+            qty: qty
+        });
+    }
+    
+    saveCart();
+    updateCartBadge();
+    renderCart();
+    showToast('تمت الإضافة للسلة!');
+};
+
+function saveCart() {
+    localStorage.setItem('sanad_cart', JSON.stringify(cart));
+}
+
+function updateCartBadge() {
+    const badges = document.querySelectorAll('.cart-badge');
+    const total = cart.reduce((sum, item) => sum + item.qty, 0);
+    badges.forEach(b => {
+        b.textContent = total;
+        b.style.display = total > 0 ? 'flex' : 'none';
+    });
+}
+
+function renderCart() {
+    const container = document.getElementById('cart-items-container');
+    if (!container) return;
+    
+    if (cart.length === 0) {
+        container.innerHTML = `
+            <div class="py-20 text-center space-y-4">
+                <div class="w-24 h-24 rounded-full bg-surface-container mx-auto flex items-center justify-center">
+                    <span class="material-symbols-outlined text-4xl text-on-surface-variant">shopping_basket</span>
+                </div>
+                <h3 class="text-xl font-bold text-on-surface">سلتك فارغة</h3>
+                <p class="text-on-surface-variant">لم تقم بإضافة أي منتجات للسلة بعد.</p>
+                <button onclick="navigate('page_1')" class="bg-primary text-on-primary px-8 py-3 rounded-full font-bold border-0 cursor-pointer">ابدأ التسوق</button>
+            </div>
+        `;
+        document.getElementById('cart-count-header').textContent = 'السلة فارغة';
+        updateCartTotals();
+        return;
+    }
+
+    document.getElementById('cart-count-header').textContent = `لديك ${cart.length} منتجات في السلة`;
+
+    container.innerHTML = cart.map(item => `
+        <div class="bg-surface-container-low p-4 rounded-2xl flex gap-4 items-center">
+            <div class="w-20 h-20 rounded-xl overflow-hidden bg-surface shrink-0">
+                <img src="${getDriveImageUrl(item.image)}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/200x200/f1f5f9/1e3a8a?text=${encodeURIComponent(item.name)}'">
+            </div>
+            <div class="flex-1">
+                <h4 class="font-bold text-on-surface text-sm mb-1">${item.name}</h4>
+                <p class="text-primary font-black text-sm">${item.price} د.أ</p>
+                <div class="flex items-center justify-between mt-2">
+                    <div class="flex items-center bg-surface rounded-lg px-1">
+                        <button onclick="changeQty('${item.id}', -1)" class="w-8 h-8 flex items-center justify-center text-primary border-0 bg-transparent cursor-pointer"><span class="material-symbols-outlined text-sm">remove</span></button>
+                        <span class="w-8 text-center font-bold text-xs">${item.qty}</span>
+                        <button onclick="changeQty('${item.id}', 1)" class="w-8 h-8 flex items-center justify-center text-primary border-0 bg-transparent cursor-pointer"><span class="material-symbols-outlined text-sm">add</span></button>
+                    </div>
+                    <button onclick="removeFromCart('${item.id}')" class="text-error border-0 bg-transparent cursor-pointer p-1"><span class="material-symbols-outlined text-lg">delete</span></button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    updateCartTotals();
+}
+
+window.changeQty = function(id, delta) {
+    const item = cart.find(x => x.id === id);
+    if (item) {
+        item.qty += delta;
+        if (item.qty <= 0) {
+            removeFromCart(id);
+        } else {
+            saveCart();
+            updateCartBadge();
+            renderCart();
+        }
+    }
+};
+
+window.removeFromCart = function(id) {
+    cart = cart.filter(x => x.id !== id);
+    saveCart();
+    updateCartBadge();
+    renderCart();
+};
+
+function updateCartTotals() {
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const regionEl = document.getElementById('detected-region');
+    const region = (regionEl && regionEl.value) || (currentUser && currentUser.region) || 'الرمثا';
+    const delivery = subtotal > 0 ? (region === 'الرمثا' ? 1.0 : 3.0) : 0;
+    const total = subtotal + delivery;
+
+    if (document.getElementById('cart-subtotal')) document.getElementById('cart-subtotal').textContent = `${subtotal.toFixed(2)} د.أ`;
+    if (document.getElementById('cart-delivery')) document.getElementById('cart-delivery').textContent = `${delivery.toFixed(2)} د.أ`;
+    if (document.getElementById('cart-total')) document.getElementById('cart-total').textContent = `${total.toFixed(2)} د.أ`;
+}
+
+// --- Checkout & Ordering ---
+window.submitOrderToSheet = async function() {
+    const data = {
+        ...currentUser,
+        notes: document.getElementById('checkout-notes').value.trim(),
+        products: cart.map(item => `${item.name} x${item.qty}`).join(' | '),
+        total: (cart.reduce((sum, item) => sum + (item.price * item.qty), 0) + (currentUser.region === 'الرمثا' ? 1.0 : 3.0)).toFixed(2) + ' د.أ'
+    };
+    const name = data.name;
+    const phone = data.phone;
+    const address = data.address;
+    const notes = data.notes;
+    const location = data.latlng;
+    const region = data.region;
+
+    const productsStr = cart.map(item => `${item.name} x${item.qty}`).join(' | ');
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const delivery = region === 'الرمثا' ? 1.0 : 3.0;
+    const total = `${(subtotal + delivery).toFixed(2)} د.أ`;
+
+    const orderData = {
+        action: 'addOrder',
+        customerName: data.customerName || data.name,
+        customerPhone: data.customerPhone || data.phone,
+        governorate: data.governorate || data.region,
+        address: data.address,
+        products: data.products,
+        total: data.total,
+        customerLocation: data.customerLocation || data.latlng,
+        notes: data.notes
+    };
+
+    try {
+        const res = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(orderData)
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+            localStorage.setItem('last_order_id', result.orderId);
+            // Auto login/save customer
+            loginProfile(name, phone);
+            showToast('تم إرسال طلبك بنجاح!');
+            return true;
+        } else {
+            showToast('فشل إرسال الطلب: ' + result.message);
+            return false;
+        }
+    } catch (err) {
+        console.error('Error submitting order:', err);
+        showToast('خطأ في الاتصال بالخادم');
+        return false;
+    }
+};
+
+window.openCheckoutModal = function() {
+    if (cart.length === 0) {
+        showToast('عذراً، سلتك فارغة!');
+        return;
+    }
+    updateCheckoutView();
+    const modal = document.getElementById('checkoutModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+};
+
+window.updateCheckoutView = function() {
+    const user = JSON.parse(localStorage.getItem('sanad_user')) || {};
+    const hasInfo = user.name && user.phone && user.address && user.region;
+
+    const infoSection = document.getElementById('checkout-info-section');
+    const formSection = document.getElementById('checkout-form-section');
+
+    if (hasInfo) {
+        document.getElementById('summary-name').textContent = user.name;
+        document.getElementById('summary-phone').textContent = user.phone;
+        document.getElementById('summary-address').textContent = user.address;
+        
+        const delivery = user.region === 'الرمثا' ? 1.0 : 3.0;
+        document.getElementById('summary-delivery-price').textContent = `${delivery.toFixed(2)} د.أ`;
+
+        infoSection.classList.remove('hidden');
+        formSection.classList.add('hidden');
+    } else {
+        infoSection.classList.add('hidden');
+        formSection.classList.remove('hidden');
+        
+        // Pre-fill form if some info exists
+        if (user.name) document.getElementById('checkout-name').value = user.name;
+        if (user.phone) document.getElementById('checkout-phone').value = user.phone;
+    }
+};
+
+window.saveCheckoutInfo = function() {
+    const name = document.getElementById('checkout-name').value.trim();
+    const phone = document.getElementById('checkout-phone').value.trim();
+    const address = document.getElementById('checkout-address').value.trim();
+    const latlng = document.getElementById('checkout-latlng').value;
+    let region = document.getElementById('detected-region').value;
+
+    if (!name || !phone || !address) {
+        showToast('الرجاء إكمال جميع المعلومات');
+        return;
+    }
+
+    if (!region) {
+        // Fallback detection from text or default
+        region = address.includes('الرمثا') ? 'الرمثا' : 'خارج الرمثا';
+    }
+
+    if (!isValidPhone(phone)) {
+        showToast('يرجى إدخال رقم هاتف صحيح يبدأ بـ 07');
+        return;
+    }
+
+    const updatedUser = { ...(currentUser || {}), name, phone, address, latlng, region };
+    currentUser = updatedUser;
+    localStorage.setItem('sanad_user', JSON.stringify(updatedUser));
+    
+    // Sync with backend
+    try {
+        fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'saveCustomer', name, phone })
+        });
+    } catch(e) {}
+    
+    updateCheckoutView();
+    showToast('تم حفظ المعلومات بنجاح');
+};
+
+window.editCheckoutInfo = function() {
+    document.getElementById('checkout-info-section').classList.add('hidden');
+    document.getElementById('checkout-form-section').classList.remove('hidden');
+};
+
+window.confirmOrder = function() {
+    submitCheckout();
+};
+
+window.closeCheckoutModal = function() {
+    const modal = document.getElementById('checkoutModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+};
+
+window.submitCheckout = async function() {
+    const user = currentUser;
+    const notes = document.getElementById('checkout-notes').value.trim();
+    const btn = document.getElementById('order-now-btn');
+
+    if (!user.name || !user.phone || !user.address) {
+        showToast('معلومات الطلب غير مكتملة');
+        return;
+    }
+
+    // Show loading state
+    const originalContent = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-xl">progress_activity</span> جارٍ إرسال طلبك...';
+    btn.classList.add('opacity-70', 'cursor-not-allowed');
+
+    try {
+        // Send to Google Sheets
+        const success = await submitOrderToSheet();
+        if (success) {
+            cart = [];
+            saveCart();
+            updateCartBadge();
+            renderCart();
+            closeCheckoutModal();
+            navigate('page_0');
+        } else {
+            // Re-enable if failed
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+            btn.classList.remove('opacity-70', 'cursor-not-allowed');
+        }
+    } catch (err) {
+        console.error('Checkout error:', err);
+        showToast('حدث خطأ أثناء إتمام الطلب');
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+        btn.classList.remove('opacity-70', 'cursor-not-allowed');
+    }
+};
+
+
+
+// --- Profile Logic ---
+window.loginProfile = async function(manualName, manualPhone) {
+    const name = manualName || document.getElementById('profile-name-input').value.trim();
+    const phone = manualPhone || document.getElementById('profile-phone-input').value.trim();
+
+    if (!name || !phone) {
+        showToast('يرجى إدخال الاسم والهاتف');
+        return;
+    }
+
+    if (!isValidPhone(phone)) {
+        showToast('رقم الهاتف يجب أن يبدأ بـ 07 ويتكون من 10 أرقام');
+        return;
+    }
+
+    currentUser = { ...(currentUser || {}), name, phone };
+    localStorage.setItem('sanad_user', JSON.stringify(currentUser));
+    
+    // Sync with backend
+    try {
+        fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'saveCustomer', name, phone })
+        });
+    } catch(e) {}
+
+    showProfileInfo();
+    fetchMyOrders();
+    showToast('تم تحديث بيانات الحساب');
+};
+
+function showProfileInfo() {
+    document.getElementById('profile-login-section').style.display = 'none';
+    document.getElementById('profile-info-section').style.display = 'block';
+    
+    document.getElementById('profile-display-name').textContent = currentUser.name;
+    document.getElementById('profile-display-phone').textContent = currentUser.phone;
+    document.getElementById('profile-avatar').textContent = currentUser.name.substring(0, 2).toUpperCase();
+}
+
+window.logoutProfile = function() {
+    localStorage.removeItem('sanad_user');
+    currentUser = null;
+    document.getElementById('profile-login-section').style.display = 'block';
+    document.getElementById('profile-info-section').style.display = 'none';
+};
+
+window.showEditProfile = function() {
+    if (!currentUser) return;
+    document.getElementById('profile-edit-name').value = currentUser.name;
+    document.getElementById('profile-edit-phone').value = currentUser.phone;
+    document.getElementById('profile-edit-form').style.display = 'block';
+};
+
+window.saveProfileEdit = function() {
+    const name = document.getElementById('profile-edit-name').value.trim();
+    const phone = document.getElementById('profile-edit-phone').value.trim();
+    
+    if (!name || !phone) {
+        showToast('يرجى إدخال الاسم والهاتف');
+        return;
+    }
+    
+    loginProfile(name, phone);
+    document.getElementById('profile-edit-form').style.display = 'none';
+};
+
+let myOrdersCached = [];
+async function fetchMyOrders() {
+    if (!currentUser) return;
+    
+    const container = document.getElementById('my-orders-list');
+    container.innerHTML = '<p class="text-center text-on-surface-variant py-8">جاري تحميل طلباتك...</p>';
+    
+    try {
+        const res = await fetch(`${API_URL}?action=getMyOrders&phone=${currentUser.phone}`);
+        const data = await res.json();
+        
+        if (data.status === 'success' && data.orders.length > 0) {
+            myOrdersCached = data.orders;
+            container.innerHTML = data.orders.map(o => `
+                <div onclick="showOrderDetail('${o.orderId}')" 
+                     class="bg-surface-container p-4 rounded-xl flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-all active:scale-[0.98]">
+                    <div>
+                        <h4 class="font-bold text-on-surface">#${o.orderId}</h4>
+                        <p class="text-xs text-on-surface-variant">${new Date(o.date).toLocaleDateString('ar-EG')}</p>
+                    </div>
+                    <div class="text-left">
+                        <span class="text-xs font-bold px-2 py-1 rounded-full ${o.orderStatus === 'تم التوصيل' ? 'bg-green-100 text-green-700' : 'bg-primary-container text-primary'}">${o.orderStatus}</span>
+                        <p class="text-sm font-black text-primary mt-1">${o.total}</p>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = '<p class="text-center text-on-surface-variant py-8">ليس لديك طلبات سابقة</p>';
+        }
+    } catch (err) {
+        container.innerHTML = '<p class="text-center text-error py-8">خطأ في تحميل البيانات</p>';
+    }
+}
+
+window.cancelOrder = async function(orderId) {
+    if (!confirm('هل أنت متأكد من رغبتك في إلغاء هذا الطلب؟')) return;
+    
+    const btn = document.getElementById('cancel-order-btn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm align-middle">progress_activity</span> جاري الإلغاء...';
+
+    try {
+        const res = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'updateOrderStatus', orderId: orderId, status: 'ملغي' })
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+            showToast('تم إلغاء الطلب بنجاح');
+            closeOrderDetailModal();
+            fetchMyOrders();
+        } else {
+            showToast('تعذر إلغاء الطلب: ' + (result.message || 'خطأ غير معروف'));
+        }
+    } catch (err) {
+        console.error('Cancel order error:', err);
+        showToast('خطأ في الاتصال بالخادم');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+};
+
+// --- Map & Location ---
+window.getMyLocation = function() {
+    const btn = document.getElementById('location-auto-btn');
+    btn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span> جاري التحديد...';
+    
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                document.getElementById('checkout-latlng').value = `${lat},${lng}`;
+                document.getElementById('checkout-address').value = `تم التحديد تلقائياً (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+                detectRegion(lat, lng);
+                btn.innerHTML = '<span class="material-symbols-outlined">check_circle</span> تم التحديد';
+                btn.classList.add('bg-green-100', 'text-green-700');
+            },
+            () => {
+                showToast('تعذر الوصول لموقعك. يرجى الاختيار من الخريطة.');
+                btn.innerHTML = '<span class="material-symbols-outlined">my_location</span> تحديد تلقائي';
+            }
+        );
+    }
+};
+
+function detectRegion(lat, lng) {
+    // Basic logic: If near Ramtha coords (approx)
+    // Ramtha approx: 32.55, 36.00
+    const ramthaLat = 32.55;
+    const ramthaLng = 36.00;
+    const dist = Math.sqrt(Math.pow(lat - ramthaLat, 2) + Math.pow(lng - ramthaLng, 2));
+    
+    const region = dist < 0.1 ? 'الرمثا' : 'خارج الرمثا';
+    document.getElementById('detected-region').value = region;
+    updateCartTotals();
+}
+
+let selectionMap = null;
+let selectionMarker = null;
+
+window.openMapSelection = function() {
+    const container = document.getElementById('checkout-map-container');
+    container.classList.remove('hidden');
+    
+    if (!selectionMap) {
+        selectionMap = L.map('checkoutSelectionMap').setView([32.55, 36.00], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(selectionMap);
+        
+        selectionMap.on('move', () => {
+            const center = selectionMap.getCenter();
+            document.getElementById('checkout-latlng').value = `${center.lat},${center.lng}`;
+        });
+    }
+};
+
+window.confirmMapSelection = function() {
+    const center = selectionMap.getCenter();
+    const lat = center.lat;
+    const lng = center.lng;
+    document.getElementById('checkout-latlng').value = `${lat},${lng}`;
+    document.getElementById('checkout-address').value = `تم التحديد عبر الخريطة (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+    detectRegion(lat, lng);
+    document.getElementById('checkout-map-container').classList.add('hidden');
+    showToast('تم حفظ موقع التوصيل');
+};
+
+// --- Helpers ---
+function getDriveImageUrl(url) {
+    if (!url) return '';
+    const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
+}
+
+window.showToast = function(msg) {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    setTimeout(() => toast.style.opacity = '0', 3000);
+};
+
+function isFavorite(id) {
+    const favs = JSON.parse(localStorage.getItem('sanad_favs') || '[]');
+    return favs.includes(id);
+}
+
+window.toggleFavorite = function(id) {
+    let favs = JSON.parse(localStorage.getItem('sanad_favs') || '[]');
+    if (favs.includes(id)) {
+        favs = favs.filter(x => x !== id);
+    } else {
+        favs.push(id);
+    }
+    localStorage.setItem('sanad_favs', JSON.stringify(favs));
+    populateProductDetail(id); // re-render to update icon
+    renderFavorites();
+};
+
+function renderFavorites() {
+    const container = document.getElementById('favorites-grid');
+    if (!container) return;
+    
+    const favIds = JSON.parse(localStorage.getItem('sanad_favs') || '[]');
+    const favProducts = allProducts.filter(p => favIds.includes(p.id));
+    
+    if (favProducts.length === 0) {
+        container.innerHTML = '<p class="col-span-full text-center py-20 text-on-surface-variant">لا توجد منتجات في المفضلة</p>';
+        return;
+    }
+    
+    container.innerHTML = favProducts.map(p => `
+        <div onclick="populateProductDetail('${p.id}')" class="bg-surface-container-low rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+            <div class="relative h-40 overflow-hidden">
+                <img src="${getDriveImageUrl(p.image)}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/400x400/f1f5f9/1e3a8a?text=${encodeURIComponent(p.name)}'">
+            </div>
+            <div class="p-3">
+                <h4 class="font-bold text-on-surface text-xs line-clamp-1 mb-1">${p.name}</h4>
+                <div class="flex justify-between items-center mt-2">
+                    <span class="text-primary font-black text-xs">${p.price} د.أ</span>
+                    <button onclick="event.stopPropagation(); toggleFavorite('${p.id}')" class="text-accent border-0 bg-transparent cursor-pointer">
+                        <span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">favorite</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// --- Video/Audio Control ---
+// --- Video/Audio Control ---
+window.toggleVideoAudio = function(e) {
+    if (e) e.stopPropagation();
+    const vid = document.getElementById('carouselVideo');
+    const btn = document.getElementById('videoAudioBtn');
+    if (!btn) return;
+
+    const icon = btn.querySelector('.material-symbols-outlined');
+    if (!vid) {
+        // Fallback for button icon if video missing
+        return;
+    }
+
+    if (vid.muted) {
+        vid.muted = false;
+        if (icon) icon.textContent = 'volume_up';
+        btn.classList.add('bg-primary/40');
+        btn.classList.remove('bg-white/20');
+    } else {
+        vid.muted = true;
+        if (icon) icon.textContent = 'volume_off';
+        btn.classList.remove('bg-primary/40');
+        btn.classList.add('bg-white/20');
+    }
+};
+
+// --- Carousel Logic ---
+let carouselWrapper, dotsContainer;
+let currentPos = 1;
+let totalReal = 0;
+let isAnimating = false;
+let isDragging = false;
+let startX = 0;
+let carouselInterval;
+
+window.initCarousel = function() {
+    carouselWrapper = document.getElementById('carouselWrapper');
+    if (!carouselWrapper) return;
+
+    // Remove old clones if any (from previous init)
+    carouselWrapper.querySelectorAll('.carousel-clone').forEach(c => c.remove());
+
+    const realSlides = carouselWrapper.querySelectorAll('.carousel-slide');
+    totalReal = realSlides.length;
+    if (totalReal === 0) return;
+
+    // Clone last slide → prepend, Clone first slide → append
+    if (totalReal > 1) {
+        const cloneFirst = realSlides[0].cloneNode(true);
+        const cloneLast = realSlides[totalReal - 1].cloneNode(true);
+        cloneFirst.classList.add('carousel-clone');
+        cloneLast.classList.add('carousel-clone');
+        // Remove IDs from clones to avoid duplicates
+        cloneFirst.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+        cloneLast.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+        carouselWrapper.appendChild(cloneFirst);
+        carouselWrapper.insertBefore(cloneLast, carouselWrapper.firstChild);
+    }
+
+    currentPos = 1; // start at first real slide
+    clearInterval(carouselInterval);
+    isAnimating = false;
+
+    // Jump to position without animation
+    setPosition(currentPos, false);
+    updateDots();
+    setupSwipe();
+    handleVideoState();
+};
+
+function setPosition(pos, animate) {
+    if (!carouselWrapper) return;
+    carouselWrapper.style.transition = animate ? 'transform 0.6s cubic-bezier(0.4, 0, 0.2, 1)' : 'none';
+    carouselWrapper.style.transform = `translateX(${-pos * 100}%)`;
+}
+
+function updateDots() {
+    const dots = document.querySelectorAll('.carousel-dot');
+    const realIdx = (currentPos - 1 + totalReal) % totalReal; 
+    dots.forEach((dot, i) => {
+        if (i === realIdx) {
+            dot.classList.add('bg-primary', 'w-8');
+            dot.classList.remove('bg-white/50', 'w-2.5');
+        } else {
+            dot.classList.add('bg-white/50', 'w-2.5');
+            dot.classList.remove('bg-primary', 'w-8');
+        }
+    });
+}
+
+function goToPos(pos, animate) {
+    if (isAnimating || !carouselWrapper) return;
+    isAnimating = true;
+    currentPos = pos;
+    setPosition(currentPos, animate);
+
+    if (animate) {
+        const onEnd = () => {
+            carouselWrapper.removeEventListener('transitionend', onEnd);
+            if (currentPos >= totalReal + 1) {
+                currentPos = 1;
+                setPosition(currentPos, false);
+            } else if (currentPos <= 0) {
+                currentPos = totalReal;
+                setPosition(currentPos, false);
+            }
+            updateDots();
+            isAnimating = false;
+            handleVideoState();
+        };
+        carouselWrapper.addEventListener('transitionend', onEnd);
+    } else {
+        updateDots();
+        isAnimating = false;
+        handleVideoState();
+    }
+}
+
+window.nextSlide = function() {
+    if (totalReal <= 1) return;
+    goToPos(currentPos + 1, true);
+};
+
+window.prevSlide = function() {
+    if (totalReal <= 1) return;
+    goToPos(currentPos - 1, true);
+};
+
+window.changeSlide = function(realIdx) {
+    if (isAnimating) return;
+    clearInterval(carouselInterval);
+    goToPos(realIdx + 1, true);
+};
+
+function handleVideoState() {
+    const videoEl = document.getElementById('carouselVideo');
+    if (!videoEl) {
+        startAutoSlide();
+        return;
+    }
+
+    const realIdx = (currentPos - 1 + totalReal) % totalReal;
+    if (realIdx === 0) {
+        clearInterval(carouselInterval);
+        videoEl.currentTime = 0;
+        let p = videoEl.play();
+        if (p !== undefined) p.catch(() => {});
+        videoEl.onended = () => window.nextSlide();
+    } else {
+        videoEl.pause();
+        videoEl.currentTime = 0;
+        startAutoSlide();
+    }
+}
+
+function startAutoSlide() {
+    clearInterval(carouselInterval);
+    if (totalReal <= 1 || isDragging) return;
+    carouselInterval = setInterval(() => {
+        if (!isAnimating && !isDragging) window.nextSlide();
+    }, 5000);
+}
+
+function setupSwipe() {
+    const carousel = document.getElementById('heroCarousel');
+    if (!carousel || carousel._swipeAttached) return;
+    carousel._swipeAttached = true;
+
+    carousel.addEventListener('touchstart', (e) => {
+        if (isAnimating) return;
+        startX = e.touches[0].clientX;
+        isDragging = true;
+        clearInterval(carouselInterval);
+        if (carouselWrapper) carouselWrapper.style.transition = 'none';
+    }, { passive: true });
+
+    carousel.addEventListener('touchmove', (e) => {
+        if (!isDragging || !carouselWrapper || isAnimating) return;
+        const diff = e.touches[0].clientX - startX;
+        const percentMove = (diff / carousel.offsetWidth) * 100;
+        // In LTR-style layout (forced by dir="ltr"), dragging left means decreasing the translateX (further negative)
+        // pos=1 is -100%. If finger moves left (diff < 0), we want to reach -110%.
+        // So we add percentMove (which is negative).
+        carouselWrapper.style.transform = `translateX(${(currentPos * -100) + percentMove}%)`;
+    }, { passive: true });
+
+    carousel.addEventListener('touchend', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        const diff = e.changedTouches[0].clientX - startX;
+
+        if (Math.abs(diff) > 50) {
+            if (diff < 0) window.nextSlide(); // Swipe left -> Next
+            else window.prevSlide();          // Swipe right -> Prev
+        } else {
+            setPosition(currentPos, true);
+            handleVideoState();
+        }
+    });
+}
+
+
+
+function setupGlobalEventListeners() {
+    // initCarousel is now called from initApp
+}
+
+
+window.showOrderDetail = function(orderId) {
+    const order = myOrdersCached.find(o => o.orderId === orderId);
+    if (!order) return;
+
+    document.getElementById('modal-order-id').textContent = `طلب رقم #${order.orderId}`;
+    document.getElementById('modal-order-date').textContent = new Date(order.date).toLocaleDateString('ar-EG', { dateStyle: 'long' });
+    
+    const statusEl = document.getElementById('modal-order-status');
+    statusEl.textContent = order.orderStatus;
+    
+    // Status color
+    if (order.orderStatus === 'تم التوصيل') {
+        statusEl.className = 'px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold';
+    } else if (order.orderStatus === 'ملغي') {
+        statusEl.className = 'px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold';
+    } else {
+        statusEl.className = 'px-3 py-1 rounded-full bg-primary-container text-primary text-xs font-bold';
+    }
+
+    // Items
+    const itemsContainer = document.getElementById('modal-order-items');
+    itemsContainer.innerHTML = order.products.split('|').map(p => {
+        const parts = p.trim().split(' x ');
+        if (parts.length === 2) {
+            return `<div class="flex justify-between items-center text-sm py-1 border-b border-outline-variant/10 last:border-0">
+                        <span class="text-on-surface">${parts[0]}</span>
+                        <span class="font-bold text-primary">x${parts[1]}</span>
+                    </div>`;
+        }
+        return `<p class="text-sm py-1">${p}</p>`;
+    }).join('');
+
+    // Totals
+    const totalVal = parseFloat(order.total) || 0;
+    const deliveryVal = parseFloat(order.delivery) || 0;
+    const subtotalVal = totalVal - deliveryVal;
+
+    document.getElementById('modal-order-subtotal').textContent = `${subtotalVal.toFixed(2)} د.أ`;
+    document.getElementById('modal-order-delivery').textContent = `${deliveryVal.toFixed(2)} د.أ`;
+    document.getElementById('modal-order-total').textContent = `${totalVal.toFixed(2)} د.أ`;
+
+    // Note
+    const noteContainer = document.getElementById('modal-order-note-container');
+    if (order.note && order.note.trim()) {
+        noteContainer.classList.remove('hidden');
+        document.getElementById('modal-order-note').textContent = order.note;
+    } else {
+        noteContainer.classList.add('hidden');
+    }
+    
+    // Cancel Button Visibility
+    const cancelBtn = document.getElementById('cancel-order-btn');
+    if (cancelBtn) {
+        if (order.orderStatus === 'جديد') {
+            cancelBtn.classList.remove('hidden');
+            cancelBtn.onclick = () => cancelOrder(orderId);
+        } else {
+            cancelBtn.classList.add('hidden');
+        }
+    }
+
+    document.getElementById('orderDetailModal').classList.remove('hidden');
+    document.getElementById('orderDetailModal').classList.add('flex');
+};
+
+window.closeOrderDetailModal = function() {
+    document.getElementById('orderDetailModal').classList.add('hidden');
+    document.getElementById('orderDetailModal').classList.remove('flex');
+};

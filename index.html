@@ -154,7 +154,7 @@
             <!-- Featured Section: Cake of the Month -->
             <!-- Hero Carousel Section -->
             <section class="relative overflow-hidden rounded-2xl shadow-ambient h-[400px]" id="heroCarousel">
-                <div id="carouselWrapper" class="flex h-full w-full transition-transform duration-500 ease-out">
+                <div id="carouselWrapper" dir="ltr" class="flex h-full w-full transition-transform duration-500 ease-out">
                     <!-- Slide 0: Video Banner -->
                     <div class="carousel-slide min-w-full h-full relative" data-slide="0">
                         <video id="carouselVideo" class="w-full h-full object-cover" playsinline muted autoplay>
@@ -308,7 +308,7 @@
             </section>
             <div id="listing-category-filters" class="flex gap-3 overflow-x-auto pb-6 no-scrollbar -mx-6 px-6 snap-x">
                 <button onclick="filterCategory('all')"
-                    class="snap-start whitespace-nowrap px-6 py-2.5 rounded-full bg-primary text-white font-bold shadow-ambient transition-transform active:scale-95 border-0 cursor-pointer">الكل</button>
+                    class="snap-start whitespace-nowrap px-6 py-2.5 rounded-full bg-primary text-white font-bold shadow-ambient transition-transform active:scale-95 border-0 cursor-pointer hover:bg-primary/90">الكل</button>
                 <button onclick="filterCategory('المطبخ')"
                     class="snap-start whitespace-nowrap px-6 py-2.5 rounded-full bg-white text-on-surface-variant font-semibold border border-outline hover:bg-primary-light/20 transition-colors cursor-pointer">المطبخ</button>
                 <button onclick="filterCategory('التنظيف')"
@@ -344,7 +344,7 @@
                 </button>
             </div>
         </header>
-        <main class="pt-20 pb-32 max-w-4xl mx-auto px-4 md:px-0">
+        <main class="pt-20 pb-48 max-w-4xl mx-auto px-4 md:px-0">
             <div id="product-detail-content">
                 <!-- Populated dynamically by app.js populateProductDetail() -->
             </div>
@@ -494,115 +494,7 @@
     </div>
 
     <!-- ======================= PAGE 5: ORDER TRACKING ======================= -->
-    <div id="page_5" class="app-page" style="display:none; width: 100%; height: 100%;">
-        <header
-            class="sticky top-0 z-50 bg-surface/90 backdrop-blur-md px-4 py-3 flex items-center justify-between shadow-ambient">
-            <button onclick="goBack()"
-                class="flex h-10 w-10 items-center justify-center rounded-full bg-surface-container text-primary cursor-pointer border-0">
-                <span class="material-symbols-outlined text-xl">arrow_forward</span>
-            </button>
-            <h1 class="text-lg font-headline font-bold text-center text-on-surface">تتبع الطلب</h1>
-            <div class="w-10"></div>
-        </header>
-        <main class="flex-1 p-4 space-y-4 max-w-md mx-auto w-full pb-28">
 
-            <!-- نموذج البحث عن الطلب -->
-            <section id="track-search-section" class="bg-surface-container-low rounded-xl p-6 border-0 shadow-none">
-                <h2 class="text-lg font-bold text-on-surface mb-4">بحث عن طلبك</h2>
-                <div class="space-y-3">
-                    <input type="text" id="track-order-id"
-                        class="w-full rounded-xl bg-surface border-0 p-4 focus:ring-2 focus:ring-primary text-on-surface font-semibold"
-                        placeholder="رقم الطلب (مثل: SC123456)">
-                    <input type="tel" id="track-phone"
-                        class="w-full rounded-xl bg-surface border-0 p-4 focus:ring-2 focus:ring-primary text-on-surface font-semibold"
-                        placeholder="رقم الهاتف">
-                    <button onclick="trackOrder()"
-                        class="w-full bg-gradient-to-br from-primary-container to-primary text-on-primary py-4 rounded-xl font-bold text-lg hover:opacity-90 transition-all active:scale-95 shadow-none cursor-pointer border-0">
-                        تتبع الطلب
-                    </button>
-                </div>
-            </section>
-
-            <!-- نتيجة التتبع (مخفية افتراضياً) -->
-            <section id="track-result-section" style="display:none;" class="space-y-4">
-                <!-- معلومات الطلب -->
-                <div class="bg-surface-container-low rounded-xl p-6 border-0 shadow-none">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h2 class="text-xl font-bold text-on-surface" id="track-order-number">طلب رقم #---</h2>
-                            <p class="text-xs text-on-surface-variant mt-0.5" id="track-order-date">---</p>
-                        </div>
-                        <span id="track-status-badge"
-                            class="px-3 py-1 rounded-full bg-primary-container text-on-primary-container text-xs font-bold">جديد</span>
-                    </div>
-                    <div class="mt-8 px-2">
-                        <div class="relative flex items-center justify-between">
-                            <div class="absolute top-4 left-0 right-0 h-0.5 bg-surface-container-highest"></div>
-                            <div id="track-progress-bar"
-                                class="absolute top-4 right-0 h-0.5 bg-primary transition-all duration-500"
-                                style="width: 0%;"></div>
-                            <div class="relative flex flex-col items-center group" id="step-received">
-                                <div
-                                    class="w-8 h-8 rounded-full bg-surface-container-highest text-on-surface-variant flex items-center justify-center z-10 shadow-none">
-                                    <span class="material-symbols-outlined text-sm">receipt_long</span>
-                                </div>
-                                <span class="text-[10px] mt-1.5 font-medium text-on-surface-variant/50">مستلم</span>
-                            </div>
-                            <div class="relative flex flex-col items-center group" id="step-preparing">
-                                <div
-                                    class="w-8 h-8 rounded-full bg-surface-container-highest text-on-surface-variant flex items-center justify-center z-10 shadow-none">
-                                    <span class="material-symbols-outlined text-sm">skillet</span>
-                                </div>
-                                <span class="text-[10px] mt-1.5 font-medium text-on-surface-variant/50">يُحضّر</span>
-                            </div>
-                            <div class="relative flex flex-col items-center group" id="step-onway">
-                                <div
-                                    class="w-8 h-8 rounded-full bg-surface-container-highest text-on-surface-variant flex items-center justify-center z-10 shadow-none">
-                                    <span class="material-symbols-outlined text-sm">two_wheeler</span>
-                                </div>
-                                <span class="text-[10px] mt-1.5 font-medium text-on-surface-variant/50">في الطريق</span>
-                            </div>
-                            <div class="relative flex flex-col items-center group" id="step-delivered">
-                                <div
-                                    class="w-8 h-8 rounded-full bg-surface-container-highest text-on-surface-variant flex items-center justify-center z-10 shadow-none">
-                                    <span class="material-symbols-outlined text-sm">home</span>
-                                </div>
-                                <span class="text-[10px] mt-1.5 font-medium text-on-surface-variant/50">تم
-                                    التوصيل</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- الخريطة (تظهر فقط في حالة "في الطريق") -->
-                <section id="track-map-section" style="display:none;"
-                    class="bg-surface-container-low rounded-xl overflow-hidden shadow-none border-0">
-                    <div id="trackingMap" style="height: 250px; width: 100%; z-index: 1;"></div>
-                </section>
-
-                <!-- تفاصيل الطلب -->
-                <div class="bg-surface-container-low rounded-xl p-5 border-0 shadow-none">
-                    <h3 class="text-sm font-bold text-on-surface mb-3">تفاصيل الطلب</h3>
-                    <div id="track-order-items" class="space-y-2 text-sm text-on-surface-variant"></div>
-                    <div class="border-t border-surface-container-highest mt-3 pt-3 flex justify-between">
-                        <span class="font-bold text-on-surface">المجموع</span>
-                        <span class="font-bold text-primary" id="track-order-total">---</span>
-                    </div>
-                </div>
-
-                <!-- زر إلغاء (يظهر برمجياً) -->
-                <div id="cancel-order-container" style="display:none;"></div>
-
-                <!-- زر تحديث -->
-                <button onclick="refreshTracking()"
-                    class="w-full bg-surface-container text-on-surface-variant py-3 rounded-xl font-bold text-sm hover:bg-surface-container-high transition-all active:scale-95 shadow-none cursor-pointer border-0 flex items-center justify-center gap-2 mt-4">
-                    <span class="material-symbols-outlined text-lg">refresh</span>
-                    تحديث الحالة
-                </button>
-            </section>
-
-        </main>
-    </div>
 
     <!-- ======================= PAGE 6: FAVORITES ======================= -->
     <div id="page_6" class="app-page" style="display:none; width: 100%; height: 100%;">
@@ -648,9 +540,9 @@
                         <input type="text" id="profile-name-input"
                             class="w-full rounded-xl bg-background border border-outline/30 p-4 focus:ring-2 focus:ring-primary text-on-surface font-semibold text-center"
                             placeholder="الاسم الكامل">
-                        <input type="tel" id="profile-phone-input"
+                        <input type="tel" id="profile-phone-input" maxlength="10" pattern="07[0-9]{8}"
                             class="w-full rounded-xl bg-background border border-outline/30 p-4 focus:ring-2 focus:ring-primary text-on-surface font-semibold text-center"
-                            placeholder="رقم الهاتف">
+                            placeholder="07XXXXXXXX">
                         <button onclick="loginProfile()"
                             class="w-full bg-gradient-to-br from-primary-container to-primary text-on-primary py-4 rounded-xl font-bold text-lg hover:opacity-90 transition-all active:scale-95 shadow-none cursor-pointer border-0">
                             تسجيل
@@ -684,9 +576,9 @@
                     <input type="text" id="profile-edit-name"
                         class="w-full rounded-xl bg-surface border-0 p-4 focus:ring-2 focus:ring-primary text-on-surface font-semibold mb-3"
                         placeholder="الاسم">
-                    <input type="tel" id="profile-edit-phone"
+                    <input type="tel" id="profile-edit-phone" maxlength="10" pattern="07[0-9]{8}"
                         class="w-full rounded-xl bg-surface border-0 p-4 focus:ring-2 focus:ring-primary text-on-surface font-semibold mb-3 text-left"
-                        dir="ltr" placeholder="رقم الهاتف">
+                        dir="ltr" placeholder="07XXXXXXXX">
                     <div class="flex gap-2">
                         <button onclick="saveProfileEdit()"
                             class="flex-1 bg-primary text-on-primary py-3 rounded-xl font-bold border-0 cursor-pointer">
@@ -865,7 +757,7 @@
                     <span class="material-symbols-outlined">local_shipping</span>
                     <h2 class="text-xl font-black">سياسة الطلب والتوصيل</h2>
                 </div>
-                <p class="text-on-surface-variant leading-relaxed text-sm">نحن في ChocoBox نسعى لتوفير أفضل تجربة لكم.
+                <p class="text-on-surface-variant leading-relaxed text-sm">نحن في سند سنتر نسعى لتوفير أفضل تجربة لكم.
                     يتم معالجة الطلبات خلال 24 ساعة من تأكيد الطلب.</p>
                 <ul class="list-disc list-inside text-on-surface-variant space-y-3 text-sm">
                     <li>التوصيل داخل عمان يتم خلال 24-48 ساعة.</li>
@@ -907,7 +799,7 @@
             <section class="space-y-4">
                 <h2 class="text-xl font-black text-primary border-b border-surface-container-highest pb-2">شرط الأهلية
                 </h2>
-                <p class="text-on-surface-variant leading-relaxed">باستخدامك لموقع ChocoBox، أنت تقر بأنك تبلغ من العمر
+                <p class="text-on-surface-variant leading-relaxed">باستخدامك لموقع سند سنتر، أنت تقر بأنك تبلغ من العمر
                     18 عاماً على الأقل أو تستخدم الموقع تحت إشراف ولي الأمر.</p>
             </section>
             <section class="space-y-4">
@@ -925,7 +817,7 @@
     </div>
 
     <!-- ======================= GLOBAL BOTTOM NAVIGATION ======================= -->
-    <nav class="fixed bottom-0 left-0 w-full z-[100] px-4 pointer-events-none">
+    <nav id="global-nav" class="fixed bottom-0 left-0 w-full z-[100] px-4 pointer-events-none">
         <div
             class="max-w-md mx-auto pointer-events-auto bg-surface/90 backdrop-blur-2xl rounded-t-[1.5rem] shadow-ambient px-4 pb-6 pt-3 flex justify-around items-center border-0">
             <button onclick="navigate('page_0')"
@@ -979,18 +871,63 @@
                 </button>
             </div>
 
-            <div class="space-y-4">
+            <!-- Info Section (Show if user has saved info) -->
+            <div id="checkout-info-section" class="hidden mb-6">
+                <div class="bg-surface-container-low p-5 rounded-2xl border border-outline/10 space-y-4">
+                    <div class="flex items-center gap-4">
+                        <span class="material-symbols-outlined text-primary bg-primary/10 p-2.5 rounded-xl">person</span>
+                        <div>
+                            <p class="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider mb-0.5">الاسم</p>
+                            <p id="summary-name" class="font-bold text-on-surface text-base"></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="material-symbols-outlined text-primary bg-primary/10 p-2.5 rounded-xl">call</span>
+                        <div>
+                            <p class="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider mb-0.5">رقم الهاتف</p>
+                            <p id="summary-phone" class="font-bold text-on-surface text-base" dir="ltr"></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="material-symbols-outlined text-primary bg-primary/10 p-2.5 rounded-xl">location_on</span>
+                        <div class="flex-1">
+                            <p class="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider mb-0.5">عنوان التوصيل</p>
+                            <p id="summary-address" class="font-bold text-on-surface text-sm leading-relaxed"></p>
+                        </div>
+                    </div>
+                    <div class="pt-3 mt-3 border-t border-outline/5 flex justify-between items-center">
+                        <span class="text-xs font-bold text-on-surface-variant">سعر التوصيل:</span>
+                        <span id="summary-delivery-price" class="text-sm font-black text-primary"></span>
+                    </div>
+                </div>
+                
+                <div class="mt-8 space-y-3">
+                    <button id="order-now-btn" onclick="confirmOrder()"
+                        class="w-full bg-gradient-to-br from-primary to-primary-container text-on-primary py-4 rounded-xl font-black text-lg shadow-ambient hover:opacity-90 transition-all active:scale-95 border-0 cursor-pointer flex items-center justify-center gap-2">
+                        <span class="material-symbols-outlined">shopping_cart_checkout</span>
+                        تأكيد وطلب الآن
+                    </button>
+                    <button onclick="editCheckoutInfo()"
+                        class="w-full bg-surface-container text-on-surface-variant py-4 rounded-xl font-bold hover:bg-surface-container-high transition-colors border-0 cursor-pointer flex items-center justify-center gap-2">
+                        <span class="material-symbols-outlined text-base">edit</span>
+                        تغيير معلومات الطلب
+                    </button>
+                </div>
+            </div>
+
+            <!-- Form Section (Show if info missing or editing) -->
+            <div id="checkout-form-section" class="space-y-5">
                 <div>
-                    <label class="block text-sm font-bold text-on-surface-variant mb-1">الاسم</label>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1.5">الاسم الكامل</label>
                     <input type="text" id="checkout-name"
                         class="w-full rounded-xl bg-background border border-outline/30 p-4 focus:ring-2 focus:ring-primary text-on-surface font-semibold"
-                        placeholder="الاسم الكامل">
+                        placeholder="أدخل اسمك الكامل">
                 </div>
                 <div>
-                    <label class="block text-sm font-bold text-on-surface-variant mb-1">رقم الهاتف</label>
-                    <input type="tel" id="checkout-phone"
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1.5">رقم الهاتف</label>
+                    <input type="tel" id="checkout-phone" maxlength="10" pattern="07[0-9]{8}"
                         class="w-full rounded-xl bg-background border border-outline/30 p-4 focus:ring-2 focus:ring-primary text-on-surface font-semibold"
-                        placeholder="079XXXXXXX">
+                        placeholder="07XXXXXXXX">
                 </div>
                 <div>
                     <label class="block text-sm font-bold text-on-surface-variant mb-2">موقع التوصيل</label>
@@ -1021,319 +958,78 @@
                         </button>
                     </div>
 
-                    <div id="checkout-address-box"
-                        class="hidden bg-surface-container-low p-4 rounded-xl border border-outline-variant/30 flex items-start gap-3">
-                        <span class="material-symbols-outlined text-primary mt-0.5"
-                            style="font-variation-settings: 'FILL' 1;">location_on</span>
-                        <div class="flex-1">
-                            <p id="checkout-address-text" class="text-sm font-bold text-on-surface mb-1">...</p>
-                            <button onclick="document.getElementById('checkout-address').classList.remove('hidden')"
-                                type="button"
-                                class="text-xs text-primary underline border-0 bg-transparent cursor-pointer p-0 font-bold mt-1">تعديل
-                                التفاصيل المكتوبة (رقم الشقة، البناية)</button>
-                        </div>
-                    </div>
-
-                    <textarea id="checkout-address"
-                        class="hidden mt-3 w-full rounded-xl bg-surface border border-outline-variant/30 p-3 min-h-[60px] focus:ring-2 focus:ring-primary text-on-surface font-semibold text-sm"
-                        placeholder="تفاصيل العنوان (رقم البناية، الشقة...)"></textarea>
-
+                    <input type="text" id="checkout-address"
+                        class="w-full rounded-xl bg-background border border-outline/30 p-4 focus:ring-2 focus:ring-primary text-on-surface font-semibold mb-3"
+                        placeholder="تفاصيل العنوان (الشارع، رقم البناية...)">
+                    
                     <input type="hidden" id="checkout-latlng" value="">
-                    <!-- Preserve hidden element for compatibility -->
-                    <input type="hidden" id="checkout-gov" value="">
+                    <input type="hidden" id="detected-region" value="">
+                    <input type="hidden" id="checkout-address-text" value="">
                 </div>
                 <div>
-                    <label class="block text-sm font-bold text-on-surface-variant mb-1">ملاحظات الطلب</label>
+                    <label class="block text-sm font-bold text-on-surface-variant mb-1.5">ملاحظات الطلب (اختياري)</label>
                     <textarea id="checkout-notes"
-                        class="w-full rounded-xl bg-surface border-0 p-4 min-h-[80px] focus:ring-2 focus:ring-primary text-on-surface font-semibold"
-                        placeholder="أي تعليمات إضافية للتوصيل أو التجهيز..."></textarea>
+                        class="w-full rounded-xl bg-background border border-outline/30 p-4 min-h-[80px] focus:ring-2 focus:ring-primary text-on-surface font-semibold"
+                        placeholder="أي ملاحظات إضافية للتوصيل..."></textarea>
                 </div>
-            </div>
 
-            <button onclick="submitCheckout()" id="submit-checkout-btn"
-                class="w-full mt-8 border-0 bg-gradient-to-br from-primary-container to-primary text-on-primary py-4 rounded-xl font-bold text-lg hover:opacity-90 transition-all active:scale-95 shadow-none cursor-pointer flex items-center justify-center gap-2">
-                <span>إتمام الطلب</span>
-            </button>
+                <button id="save-checkout-info-btn" onclick="saveCheckoutInfo()"
+                    class="w-full bg-gradient-to-br from-primary-container to-primary text-on-primary py-4 rounded-xl font-black text-lg shadow-none hover:opacity-90 transition-all active:scale-95 border-0 cursor-pointer">
+                    حفظ ومتابعة الطلب
+                </button>
+            </div>
         </div>
     </div>
-    <script>
-        // ── Infinite Loop Carousel ──
-        // Uses clone technique: [CloneLast, Slide0, Slide1, ..., SlideN, CloneFirst]
-        // Real slides are at indices 1..N, clones at 0 and N+1
-        let currentPos = 1;          // position in the extended array (1 = first real slide)
-        let totalReal = 0;           // number of real slides
-        let carouselInterval = null;
-        let carouselWrapper = null;
-        let isAnimating = false;
-        let startX = 0;
-        let isDragging = false;
 
-        function initCarousel() {
-            carouselWrapper = document.getElementById('carouselWrapper');
-            if (!carouselWrapper) return;
-
-            // Remove old clones if any (from previous init)
-            carouselWrapper.querySelectorAll('.carousel-clone').forEach(c => c.remove());
-
-            const realSlides = carouselWrapper.querySelectorAll('.carousel-slide');
-            totalReal = realSlides.length;
-            if (totalReal === 0) return;
-
-            // Clone last slide → prepend, Clone first slide → append
-            if (totalReal > 1) {
-                const cloneFirst = realSlides[0].cloneNode(true);
-                const cloneLast = realSlides[totalReal - 1].cloneNode(true);
-                cloneFirst.classList.add('carousel-clone');
-                cloneLast.classList.add('carousel-clone');
-                // Remove IDs from clones to avoid duplicates
-                cloneFirst.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-                cloneLast.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-                carouselWrapper.appendChild(cloneFirst);
-                carouselWrapper.insertBefore(cloneLast, carouselWrapper.firstChild);
-            }
-
-            currentPos = 1; // start at first real slide
-            clearInterval(carouselInterval);
-            isAnimating = false;
-
-            // Jump to position without animation
-            setPosition(currentPos, false);
-            updateDots();
-            setupSwipe();
-            handleVideoState();
-        }
-
-        function setPosition(pos, animate) {
-            if (!carouselWrapper) return;
-            if (animate) {
-                carouselWrapper.style.transition = 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
-            } else {
-                carouselWrapper.style.transition = 'none';
-                void carouselWrapper.offsetHeight; 
-            }
-            carouselWrapper.style.transform = `translateX(${pos * 100}%)`;
-        }
-
-        function getRealIndex() {
-            return currentPos - 1;
-        }
-
-        function updateDots() {
-            const dots = document.querySelectorAll('.carousel-dot');
-            const realIdx = (currentPos - 1 + totalReal) % totalReal; 
-            dots.forEach((dot, i) => {
-                if (i === realIdx) {
-                    dot.classList.add('bg-primary', 'w-8');
-                    dot.classList.remove('bg-white/50', 'w-2.5');
-                } else {
-                    dot.classList.add('bg-white/50', 'w-2.5');
-                    dot.classList.remove('bg-primary', 'w-8');
-                }
-            });
-        }
-
-        function goToPos(pos, animate = true) {
-            if (!carouselWrapper || totalReal === 0 || isAnimating) return;
-
-            isAnimating = animate;
-            currentPos = pos;
-            setPosition(currentPos, animate);
-
-            if (animate && totalReal > 1) {
-                const onEnd = () => {
-                    carouselWrapper.removeEventListener('transitionend', onEnd);
-                    
-                    if (currentPos <= 0) {
-                        currentPos = totalReal;
-                        setPosition(currentPos, false);
-                    } else if (currentPos >= totalReal + 1) {
-                        currentPos = 1;
-                        setPosition(currentPos, false);
-                    }
-
-                    updateDots();
-                    isAnimating = false;
-                    handleVideoState();
-                };
-                carouselWrapper.addEventListener('transitionend', onEnd);
-
-                setTimeout(() => {
-                    if (isAnimating) onEnd();
-                }, 600);
-            } else {
-                updateDots();
-                isAnimating = false;
-                handleVideoState();
-            }
-        }
-
-        function nextSlide() {
-            if (totalReal <= 1) return;
-            goToPos(currentPos + 1, true);
-        }
-
-        function prevSlide() {
-            if (totalReal <= 1) return;
-            goToPos(currentPos - 1, true);
-        }
-
-        function changeSlide(realIdx) {
-            if (isAnimating) return;
-            clearInterval(carouselInterval);
-            goToPos(realIdx + 1, true);
-        }
-
-        function handleVideoState() {
-            const videoEl = document.getElementById('carouselVideo');
-            if (!videoEl) {
-                startAutoSlide();
-                return;
-            }
-
-            const realIdx = (currentPos - 1 + totalReal) % totalReal;
-            if (realIdx === 0) {
-                clearInterval(carouselInterval);
-                videoEl.currentTime = 0;
-                let p = videoEl.play();
-                if (p !== undefined) p.catch(() => {});
-                videoEl.onended = () => nextSlide();
-            } else {
-                videoEl.pause();
-                videoEl.currentTime = 0;
-                startAutoSlide();
-            }
-        }
-
-        function startAutoSlide() {
-            clearInterval(carouselInterval);
-            if (totalReal <= 1 || isDragging) return;
-            carouselInterval = setInterval(() => {
-                if (!isAnimating && !isDragging) nextSlide();
-            }, 5000);
-        }
-
-        function toggleVideoAudio(e) {
-            if (e) e.stopPropagation();
-            const vid = document.getElementById('carouselVideo');
-            const btn = document.getElementById('videoAudioBtn');
-            if (!vid || !btn) return;
-
-            const icon = btn.querySelector('.material-symbols-outlined');
-            if (vid.muted) {
-                vid.muted = false;
-                if (icon) icon.textContent = 'volume_up';
-                btn.classList.add('bg-primary/40');
-                btn.classList.remove('bg-white/20');
-            } else {
-                vid.muted = true;
-                if (icon) icon.textContent = 'volume_off';
-                btn.classList.remove('bg-primary/40');
-                btn.classList.add('bg-white/20');
-            }
-        }
-
-        function setupSwipe() {
-            const carousel = document.getElementById('heroCarousel');
-            if (!carousel || carousel._swipeAttached) return;
-            carousel._swipeAttached = true;
-
-            carousel.addEventListener('touchstart', (e) => {
-                if (isAnimating) return;
-                startX = e.touches[0].clientX;
-                isDragging = true;
-                clearInterval(carouselInterval);
-                if (carouselWrapper) carouselWrapper.style.transition = 'none';
-            }, { passive: true });
-
-            carousel.addEventListener('touchmove', (e) => {
-                if (!isDragging || !carouselWrapper || isAnimating) return;
-                const diff = e.touches[0].clientX - startX;
-                const percentMove = (diff / carousel.offsetWidth) * 100;
-                // Back to standard: content follows finger
-                carouselWrapper.style.transform = `translateX(${(currentPos * 100) + percentMove}%)`;
-            }, { passive: true });
-
-            carousel.addEventListener('touchend', (e) => {
-                if (!isDragging) return;
-                isDragging = false;
-                const diff = e.changedTouches[0].clientX - startX;
-
-                if (Math.abs(diff) > 50) {
-                    // In RTL:
-                    // Swipe LEFT (diff < 0) pushes content to right -> Previous slide
-                    // Swipe RIGHT (diff > 0) pulls content from left -> Next slide
-                    if (diff < 0) prevSlide(); 
-                    else nextSlide();          
-                } else {
-                    setPosition(currentPos, true);
-                    handleVideoState();
-                }
-            });
-        }
-
-        window.addEventListener('DOMContentLoaded', () => {
-            initCarousel();
-        });
-
-        function openCheckoutModal() {
-            if (cart.length === 0) {
-                showToast('عذراً، سلتك فارغة!');
-                return;
-            }
-            const modal = document.getElementById('checkoutModal');
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-        }
-
-        function closeCheckoutModal() {
-            const modal = document.getElementById('checkoutModal');
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-        }
-
-        async function submitCheckout() {
-            const name = document.getElementById('checkout-name').value.trim();
-            const phone = document.getElementById('checkout-phone').value.trim();
-            const address = document.getElementById('checkout-address').value.trim();
-            const btn = document.getElementById('submit-checkout-btn');
-
-            if (!name || !phone || !address) {
-                showToast('الرجاء إدخال الاسم ورقم الهاتف وتحديد الموقع');
-                return;
-            }
-
-            // Show loading state
-            const originalContent = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-xl">progress_activity</span> جارٍ إرسال طلبك...';
-            btn.classList.add('opacity-70', 'cursor-not-allowed');
-
-            try {
-                // Send to Google Sheets
-                const success = await submitOrderToSheet();
-                if (success) {
-                    cart = [];
-                    saveCart();
-                    closeCheckoutModal();
-                    navigate('page_5');
-                } else {
-                    // Re-enable if failed
-                    btn.disabled = false;
-                    btn.innerHTML = originalContent;
-                    btn.classList.remove('opacity-70', 'cursor-not-allowed');
-                }
-            } catch (err) {
-                console.error('Checkout error:', err);
-                showToast('حدث خطأ غير متوقع');
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
-                btn.classList.remove('opacity-70', 'cursor-not-allowed');
-            }
-        }
-    </script>
-
-    <!-- App Logic -->
-    <script src="js/app.js"></script>
+    <!-- Scripts handled by js/app.js -->
+    <script type="module" src="js/app.js"></script>
+    <!-- ======================= MODAL: ORDER DETAILS ======================= -->
+    <div id="orderDetailModal" class="fixed inset-0 z-[150] hidden items-center justify-center p-4">
+        <div class="absolute inset-0 bg-inverse-surface/40 backdrop-blur-md" onclick="closeOrderDetailModal()"></div>
+        <div class="relative bg-surface w-full max-w-md rounded-[2rem] shadow-ambient overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div class="p-6 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-low">
+                <div>
+                    <h3 class="text-xl font-black text-on-surface" id="modal-order-id">تفاصيل الطلب</h3>
+                    <p class="text-xs text-on-surface-variant font-medium mt-0.5" id="modal-order-date">---</p>
+                </div>
+                <button onclick="closeOrderDetailModal()" class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container-highest text-on-surface-variant border-0 cursor-pointer">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                <div class="flex justify-between items-center">
+                    <span class="text-sm font-bold text-on-surface-variant">حالة الطلب:</span>
+                    <span id="modal-order-status" class="px-3 py-1 rounded-full bg-primary-container text-on-primary-container text-xs font-bold">---</span>
+                </div>
+                <div class="space-y-3">
+                    <h4 class="text-sm font-bold text-on-surface border-r-4 border-primary pr-3">المنتجات</h4>
+                    <div id="modal-order-items" class="space-y-2 bg-surface-container-low p-4 rounded-2xl"></div>
+                </div>
+                <div class="bg-primary/5 rounded-2xl p-4 space-y-2">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-on-surface-variant">سعر المنتجات:</span>
+                        <span id="modal-order-subtotal" class="font-bold text-on-surface">---</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-on-surface-variant">التوصيل:</span>
+                        <span id="modal-order-delivery" class="font-bold text-on-surface">---</span>
+                    </div>
+                    <div class="flex justify-between border-t border-outline-variant/30 pt-2 mt-2">
+                        <span class="font-black text-on-surface">المجموع الكلي:</span>
+                        <span id="modal-order-total" class="font-black text-primary text-lg">---</span>
+                    </div>
+                </div>
+                <div id="modal-order-note-container" class="hidden">
+                    <h4 class="text-sm font-bold text-on-surface-variant mb-2">ملاحظات:</h4>
+                    <p id="modal-order-note" class="text-sm text-on-surface-variant italic bg-surface-container p-3 rounded-xl"></p>
+                </div>
+            </div>
+            <div class="p-6 bg-surface-container-low space-y-3">
+                <button id="cancel-order-btn" class="hidden w-full bg-error text-white py-4 rounded-xl font-bold shadow-ambient border-0 cursor-pointer">إلغاء الطلب</button>
+                <button onclick="closeOrderDetailModal()" class="w-full bg-primary text-on-primary py-4 rounded-xl font-bold shadow-ambient border-0 cursor-pointer">إغلاق</button>
+            </div>
+        </div>
+    </div>
 </body>
-
 </html>
+

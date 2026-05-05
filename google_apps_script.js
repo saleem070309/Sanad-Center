@@ -337,7 +337,8 @@ function addOrder(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('Orders');
   const orderId = 'SC' + Date.now().toString().slice(-6);
-  sheet.appendRow([orderId, data.customerName, data.customerPhone, data.governorate, data.address, data.products, data.total, 'جديد', new Date().toISOString(), data.customerLocation || '', '', data.notes || '']);
+  const phone = "'" + String(data.customerPhone || '').trim();
+  sheet.appendRow([orderId, data.customerName, phone, data.governorate, data.address, data.products, data.total, 'جديد', new Date().toISOString(), data.customerLocation || '', '', data.notes || '']);
   return { status: 'success', orderId: orderId };
 }
 
@@ -345,13 +346,16 @@ function saveCustomer(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('Customers');
   const allData = sheet.getDataRange().getValues();
+  const phoneToSave = String(data.phone || '').trim();
+  const normalizedPhoneToSave = normalizePhone(phoneToSave);
+  
   for (let i = 1; i < allData.length; i++) {
-    if (String(allData[i][0]) === String(data.phone)) {
+    if (normalizePhone(allData[i][0]) === normalizedPhoneToSave) {
       sheet.getRange(i + 1, 2).setValue(data.name);
       return { status: 'success' };
     }
   }
-  sheet.appendRow([data.phone, data.name, '', '', new Date().toISOString()]);
+  sheet.appendRow(["'" + phoneToSave, data.name, '', '', new Date().toISOString()]);
   return { status: 'success' };
 }
 
@@ -368,13 +372,25 @@ function updateOrderStatus(data) {
   return { status: 'error' };
 }
 
+function normalizePhone(phone) {
+  if (!phone) return '';
+  var p = String(phone).trim().replace(/\s+/g, '');
+  // Remove all leading zeros for comparison
+  while (p.length > 0 && p.charAt(0) === '0') {
+    p = p.substring(1);
+  }
+  return p;
+}
+
 function getMyOrders(phone) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Orders');
   const data = sheet.getDataRange().getValues();
   const orders = [];
+  const searchPhone = normalizePhone(phone);
+  
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][2]) === String(phone)) {
+    if (normalizePhone(data[i][2]) === searchPhone) {
       orders.push({ orderId: data[i][0], products: data[i][5], total: data[i][6], orderStatus: data[i][7], date: data[i][8] });
     }
   }
