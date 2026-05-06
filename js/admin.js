@@ -12,6 +12,14 @@ let allCustomers = [];
 let allCategories = [];
 let storeSettings = {};
 
+// --- Icon List for Categories ---
+const MATERIAL_ICONS = [
+    'category', 'blender', 'vacuum', 'devices', 'kitchen', 'home_appliance', 'smart_toy', 
+    'tv', 'speaker', 'laptop_mac', 'smartphone', 'router', 'wash', 'iron', 'microwave',
+    'oven_gen', 'coffee_maker', 'air_purifier', 'nest_cam_iq', 'light', 'thermometer', 
+    'bolt', 'water_drop', 'shopping_cart', 'store', 'card_giftcard', 'auto_fix_high'
+];
+
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     fetchData();
@@ -59,6 +67,7 @@ function renderAll() {
     renderCustomersPage();
     renderCategoriesPage();
     renderSettingsPage();
+    renderIconPicker();
 }
 
 // --- Navigation ---
@@ -217,6 +226,13 @@ window.updateStatus = async function(orderId, newStatus) {
 
 // --- Products ---
 function renderProductsPage() {
+    // Update category dropdown in modal
+    const catSelect = document.getElementById('p-cat');
+    if (catSelect) {
+        catSelect.innerHTML = '<option value="">اختر القسم...</option>' + 
+            allCategories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+    }
+
     setVal('total-products', allProducts.length);
     const grid = document.getElementById('admin-products-grid');
     if (!grid) return;
@@ -247,30 +263,12 @@ function renderProductsPage() {
             </div>
         </div>
     `).join('');
-
-    // Update category dropdown in modal
-    const catSelect = document.getElementById('p-cat');
-    if (catSelect) {
-        catSelect.innerHTML = '<option value="">اختر القسم...</option>' + 
-            allCategories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-    }
 }
 
 // --- Customers ---
 
 window.editProduct = function(id) {
-    const p = allProducts.find(x => x.id === id);
-    if (!p) return;
-    
-    document.getElementById('p-id').value = p.id;
-    document.getElementById('p-name').value = p.name;
-    document.getElementById('p-desc').value = p.description;
-    document.getElementById('p-price').value = p.price;
-    document.getElementById('p-cat').value = p.category;
-    document.getElementById('p-img').value = p.image;
-    
-    document.getElementById('modal-title').textContent = 'تعديل المنتج';
-    document.getElementById('add-product-modal').classList.remove('hidden');
+    openProductModal(id);
 };
 
 window.deleteProduct = async function(id) {
@@ -370,14 +368,36 @@ function renderCategoriesPage() {
     `).join('');
 }
 
+function renderIconPicker() {
+    const picker = document.getElementById('icon-picker');
+    if (!picker) return;
+
+    picker.innerHTML = MATERIAL_ICONS.map(icon => `
+        <div onclick="selectIcon('${icon}', this)" class="icon-option flex items-center justify-center p-2 rounded-lg cursor-pointer hover:bg-primary/10 border border-transparent transition-all">
+            <span class="material-symbols-outlined">${icon}</span>
+        </div>
+    `).join('');
+}
+
+window.selectIcon = function(icon, el) {
+    document.querySelectorAll('.icon-option').forEach(opt => opt.classList.remove('selected', 'bg-primary', 'text-white'));
+    el.classList.add('selected', 'bg-primary', 'text-white');
+    document.getElementById('cat-icon').value = icon;
+};
+
 window.deleteCategory = async function(id) {
     if (!confirm('سيتم حذف الفئة، هل أنت متأكد؟')) return;
     document.getElementById('global-loader').style.display = 'flex';
     try {
+        const cat = allCategories.find(c => c.id === id);
         await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ action: 'deleteCategory', id })
+            body: JSON.stringify({ 
+                action: 'deleteCategory', 
+                id: id,
+                name: cat ? cat.name : '' 
+            })
         });
         await fetchData(true);
     } catch(e) {}
@@ -404,6 +424,34 @@ function setupEventListeners() {
             btn.innerHTML = 'جاري الحفظ...';
             
             const id = document.getElementById('p-id').value;
+            const imgFile = document.getElementById('p-img-file').files[0];
+            let imageUrl = document.getElementById('p-img-url').value;
+
+            // Handle Image Upload if a new file is selected
+            if (imgFile) {
+                btn.innerHTML = 'جاري رفع الصورة...';
+                try {
+                    const base64 = await toBase64(imgFile);
+                    const uploadRes = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain' },
+                        body: JSON.stringify({
+                            action: 'uploadImage',
+                            base64: base64.split(',')[1],
+                            mimeType: imgFile.type,
+                            fileName: imgFile.name
+                        })
+                    });
+                    const uploadResult = await uploadRes.json();
+                    if (uploadResult.status === 'success') {
+                        imageUrl = uploadResult.url;
+                    }
+                } catch (err) {
+                    console.error('Image upload failed:', err);
+                }
+            }
+
+            btn.innerHTML = 'جاري حفظ المنتج...';
             const product = {
                 action: id ? 'updateProduct' : 'saveProduct',
                 id: id || undefined,
@@ -411,9 +459,11 @@ function setupEventListeners() {
                 description: document.getElementById('p-desc').value,
                 price: parseFloat(document.getElementById('p-price').value),
                 category: document.getElementById('p-cat').value,
-                image: document.getElementById('p-img').value || '',
+                image: imageUrl,
                 rating: '5.0',
-                fillings: ''
+                fillings: '',
+                isBestSeller: document.getElementById('p-best').checked,
+                inSlider: document.getElementById('p-slider').checked
             };
 
             try {
@@ -449,6 +499,7 @@ function setupEventListeners() {
                     body: JSON.stringify({ action: 'saveCategory', name, icon })
                 });
                 catForm.reset();
+                document.getElementById('add-category-modal').classList.add('hidden');
                 await fetchData(true);
             } catch(e) {}
         });
@@ -462,18 +513,20 @@ function setupEventListeners() {
             const btn = e.target.querySelector('button[type="submit"]');
             btn.disabled = true;
             
-            const settings = {
+            const settingsPayload = {
                 action: 'updateSettings',
-                phone: document.getElementById('set-phone').value,
-                facebook: document.getElementById('set-fb').value,
-                facebook_name: document.getElementById('set-fb-name').value
+                settings: {
+                    phone: document.getElementById('set-phone').value,
+                    facebook: document.getElementById('set-fb').value,
+                    facebook_name: document.getElementById('set-fb-name').value
+                }
             };
 
             try {
                 await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify(settings)
+                    body: JSON.stringify(settingsPayload)
                 });
                 alert('تم حفظ الإعدادات بنجاح');
             } catch (err) {}
@@ -494,6 +547,14 @@ function setHtml(id, html) {
 function setValInput(id, val) {
     const el = document.getElementById(id);
     if (el) el.value = val;
+}
+function toBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+    });
 }
 function parseCurrency(val) {
     if (!val) return 0;
