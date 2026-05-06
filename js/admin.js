@@ -358,14 +358,24 @@ function renderCategoriesPage() {
                 </div>
                 <div>
                     <h4 class="font-bold text-on-surface">${cat.name}</h4>
-                    <p class="text-xs text-on-surface-variant">#${cat.id}</p>
+                    <p class="text-xs text-on-surface-variant">#${cat.id || '---'}</p>
                 </div>
             </div>
-            <button onclick="deleteCategory('${cat.id || ''}', '${cat.name.replace(/'/g, "\\'")}')" class="text-error bg-transparent border-0 cursor-pointer p-2 hover:bg-error-container/20 rounded-full transition-colors">
+            <button data-action="delete" data-id="${cat.id || ''}" data-name="${cat.name}" class="text-error bg-transparent border-0 cursor-pointer p-2 hover:bg-error-container/20 rounded-full transition-colors">
                 <span class="material-symbols-outlined">delete</span>
             </button>
         </div>
     `).join('');
+
+    // Remove old listeners and add new one
+    grid.onclick = (e) => {
+        const btn = e.target.closest('button[data-action="delete"]');
+        if (btn) {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+            window.deleteCategory(id, name);
+        }
+    };
 }
 
 function renderIconPicker() {
@@ -373,10 +383,18 @@ function renderIconPicker() {
     if (!picker) return;
 
     picker.innerHTML = MATERIAL_ICONS.map(icon => `
-        <div onclick="selectIcon('${icon}', this)" class="icon-option flex items-center justify-center p-2 rounded-lg cursor-pointer hover:bg-primary/10 border border-transparent transition-all">
+        <div data-icon="${icon}" class="icon-option flex items-center justify-center p-2 rounded-lg cursor-pointer hover:bg-primary/10 border border-transparent transition-all">
             <span class="material-symbols-outlined">${icon}</span>
         </div>
     `).join('');
+
+    picker.onclick = (e) => {
+        const item = e.target.closest('.icon-option');
+        if (item) {
+            const icon = item.getAttribute('data-icon');
+            window.selectIcon(icon, item);
+        }
+    };
 }
 
 window.selectIcon = function(icon, el) {
