@@ -132,7 +132,7 @@ function doPost(e) {
     case 'updateOrderStatus': result = updateOrderStatus(data); break;
     case 'updateSettings': result = updateSettings(data); break;
     case 'saveCategory': result = saveCategory(data); break;
-    case 'deleteCategory': result = deleteCategory(data); break;
+    case 'deleteCategory': result = deleteCategory(data.name); break;
     case 'uploadImage': result = uploadImage(data); break;
     default: result = { status: 'error', message: 'Unknown action: ' + (data ? data.action : 'undefined') };
   }
@@ -261,16 +261,10 @@ function updateSettings(data) {
 function getCategories() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Categories');
-  if (!sheet) return { status: 'success', categories: [] };
   const data = sheet.getDataRange().getValues();
   const categories = [];
   for (let i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
-    categories.push({ 
-      id: String(i + 1), 
-      name: String(data[i][0]), 
-      icon: String(data[i][1] || 'category') 
-    });
+    categories.push({ name: data[i][0], icon: data[i][1] });
   }
   return { status: 'success', categories };
 }
@@ -282,25 +276,18 @@ function saveCategory(data) {
   return { status: 'success', message: 'تم إضافة القسم' };
 }
 
-function deleteCategory(data) {
+function deleteCategory(name) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Categories');
-  const rowIndex = parseInt(data.id);
-  
-  if (!isNaN(rowIndex) && rowIndex >= 2) {
-    sheet.deleteRow(rowIndex);
-    return { status: 'success', message: 'تم حذف القسم بنجاح' };
-  }
-  
-  // Fallback to name-based deletion
-  const values = sheet.getDataRange().getValues();
-  for (let i = 1; i < values.length; i++) {
-    if (String(values[i][0]).trim() === String(data.name).trim()) {
+  const data = sheet.getDataRange().getValues();
+  const trimmedName = String(name).trim();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === trimmedName) {
       sheet.deleteRow(i + 1);
-      return { status: 'success', message: 'تم حذف القسم بنجاح' };
+      return { status: 'success', message: 'تم حذف القسم' };
     }
   }
-  return { status: 'error', message: 'القسم غير موجود' };
+  return { status: 'error', message: 'القسم غير موجود: ' + trimmedName };
 }
 
 // -- Image Upload --

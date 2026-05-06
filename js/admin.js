@@ -271,10 +271,35 @@ window.editProduct = function(id) {
     openProductModal(id);
 };
 
+
+// Helper: show custom delete confirm modal, returns a Promise<boolean>
+function showDeleteConfirm(message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('delete-confirm-modal');
+        const text  = document.getElementById('delete-confirm-text');
+        const okBtn = document.getElementById('delete-confirm-btn');
+        const cancelBtn = document.getElementById('delete-cancel-btn');
+
+        if (message) text.textContent = message;
+        modal.classList.remove('hidden');
+
+        const cleanup = () => modal.classList.add('hidden');
+
+        const onOk = () => { cleanup(); resolve(true); };
+        const onCancel = () => { cleanup(); resolve(false); };
+
+        okBtn.onclick = onOk;
+        cancelBtn.onclick = onCancel;
+        modal.onclick = (e) => { if (e.target === modal) onCancel(); };
+    });
+}
+
 window.deleteProduct = async function(id) {
-    if (!confirm('هل أنت متأكد من حذف هذا المنتج؟')) return;
-    
-    document.getElementById('global-loader').style.display = 'flex';
+    const confirmed = await showDeleteConfirm('هل أنت متأكد من حذف هذا المنتج؟ لا يمكن التراجع عن هذه العملية.');
+    if (!confirmed) return;
+
+    const loader = document.getElementById('global-loader');
+    if (loader) loader.style.display = 'flex';
     try {
         const res = await fetch(API_URL, {
             method: 'POST',
@@ -284,9 +309,15 @@ window.deleteProduct = async function(id) {
         const result = await res.json();
         if (result.status === 'success') {
             await fetchData(true);
+        } else {
+            alert('فشل الحذف: ' + (result.message || 'خطأ غير معروف'));
         }
-    } catch (e) {}
-    document.getElementById('global-loader').style.display = 'none';
+    } catch (e) {
+        console.error('Delete error:', e);
+        alert('خطأ في الاتصال بالخادم، يرجى المحاولة مجدداً.');
+    } finally {
+        if (loader) loader.style.display = 'none';
+    }
 };
 
 // --- Customers ---
@@ -350,7 +381,12 @@ function renderCategoriesPage() {
     const grid = document.getElementById('admin-categories-grid');
     if (!grid) return;
     
-    grid.innerHTML = allCategories.map(cat => `
+    if (allCategories.length === 0) {
+        grid.innerHTML = '<p class="col-span-full text-center py-12 text-on-surface-variant font-bold bg-surface-container-low rounded-2xl">لا توجد أقسام مضافة.</p>';
+        return;
+    }
+
+    grid.innerHTML = allCategories.map((cat, idx) => `
         <div class="bg-surface-container-lowest p-4 rounded-xl shadow-sm flex items-center justify-between border border-surface-container">
             <div class="flex items-center gap-4">
                 <div class="w-12 h-12 rounded-xl bg-primary-container/20 flex items-center justify-center text-primary">
@@ -358,24 +394,21 @@ function renderCategoriesPage() {
                 </div>
                 <div>
                     <h4 class="font-bold text-on-surface">${cat.name}</h4>
-                    <p class="text-xs text-on-surface-variant">#${cat.id || '---'}</p>
                 </div>
             </div>
-            <button data-action="delete" data-id="${cat.id || ''}" data-name="${cat.name}" class="text-error bg-transparent border-0 cursor-pointer p-2 hover:bg-error-container/20 rounded-full transition-colors">
+            <button class="delete-cat-btn text-error bg-transparent border-0 cursor-pointer p-2 hover:bg-error-container/20 rounded-full transition-colors" data-name="${encodeURIComponent(cat.name)}">
                 <span class="material-symbols-outlined">delete</span>
             </button>
         </div>
     `).join('');
 
-    // Remove old listeners and add new one
-    grid.onclick = (e) => {
-        const btn = e.target.closest('button[data-action="delete"]');
-        if (btn) {
-            const id = btn.getAttribute('data-id');
-            const name = btn.getAttribute('data-name');
-            window.deleteCategory(id, name);
-        }
-    };
+    // Event delegation to safely handle Arabic names
+    grid.querySelectorAll('.delete-cat-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const name = decodeURIComponent(btn.dataset.name);
+            deleteCategory(name);
+        });
+    });
 }
 
 function renderIconPicker() {
@@ -383,18 +416,10 @@ function renderIconPicker() {
     if (!picker) return;
 
     picker.innerHTML = MATERIAL_ICONS.map(icon => `
-        <div data-icon="${icon}" class="icon-option flex items-center justify-center p-2 rounded-lg cursor-pointer hover:bg-primary/10 border border-transparent transition-all">
+        <div onclick="selectIcon('${icon}', this)" class="icon-option flex items-center justify-center p-2 rounded-lg cursor-pointer hover:bg-primary/10 border border-transparent transition-all">
             <span class="material-symbols-outlined">${icon}</span>
         </div>
     `).join('');
-
-    picker.onclick = (e) => {
-        const item = e.target.closest('.icon-option');
-        if (item) {
-            const icon = item.getAttribute('data-icon');
-            window.selectIcon(icon, item);
-        }
-    };
 }
 
 window.selectIcon = function(icon, el) {
@@ -403,24 +428,30 @@ window.selectIcon = function(icon, el) {
     document.getElementById('cat-icon').value = icon;
 };
 
-window.deleteCategory = async function(id, name) {
-    if (!confirm(`هل أنت متأكد من حذف قسم "${name || ''}"؟`)) return;
-    document.getElementById('global-loader').style.display = 'flex';
+window.deleteCategory = async function(id) {
+    const confirmed = await showDeleteConfirm('سيتم حذف هذا القسم نهائياً. هل أنت متأكد؟');
+    if (!confirmed) return;
+
+    const loader = document.getElementById('global-loader');
+    if (loader) loader.style.display = 'flex';
     try {
-        await fetch(API_URL, {
+        const res = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ 
-                action: 'deleteCategory', 
-                id: id || undefined,
-                name: name 
-            })
+            body: JSON.stringify({ action: 'deleteCategory', name: id })
         });
-        await fetchData(true);
+        const result = await res.json();
+        if (result.status !== 'success') {
+            alert('فشل الحذف: ' + (result.message || 'خطأ غير معروف'));
+        } else {
+            await fetchData(true);
+        }
     } catch(e) {
-        console.error('Delete failed:', e);
+        console.error('Delete category error:', e);
+        alert('خطأ في الاتصال بالخادم.');
+    } finally {
+        if (loader) loader.style.display = 'none';
     }
-    document.getElementById('global-loader').style.display = 'none';
 };
 
 // --- Settings ---
