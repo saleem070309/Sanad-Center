@@ -361,7 +361,7 @@ function renderCategoriesPage() {
                     <p class="text-xs text-on-surface-variant">#${cat.id}</p>
                 </div>
             </div>
-            <button onclick="deleteCategory('${cat.id}')" class="text-error bg-transparent border-0 cursor-pointer p-2 hover:bg-error-container/20 rounded-full transition-colors">
+            <button onclick="deleteCategory('${cat.id || ''}', '${cat.name.replace(/'/g, "\\'")}')" class="text-error bg-transparent border-0 cursor-pointer p-2 hover:bg-error-container/20 rounded-full transition-colors">
                 <span class="material-symbols-outlined">delete</span>
             </button>
         </div>
@@ -385,22 +385,23 @@ window.selectIcon = function(icon, el) {
     document.getElementById('cat-icon').value = icon;
 };
 
-window.deleteCategory = async function(id) {
-    if (!confirm('سيتم حذف الفئة، هل أنت متأكد؟')) return;
+window.deleteCategory = async function(id, name) {
+    if (!confirm(`هل أنت متأكد من حذف قسم "${name || ''}"؟`)) return;
     document.getElementById('global-loader').style.display = 'flex';
     try {
-        const cat = allCategories.find(c => c.id === id);
         await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify({ 
                 action: 'deleteCategory', 
-                id: id,
-                name: cat ? cat.name : '' 
+                id: id || undefined,
+                name: name 
             })
         });
         await fetchData(true);
-    } catch(e) {}
+    } catch(e) {
+        console.error('Delete failed:', e);
+    }
     document.getElementById('global-loader').style.display = 'none';
 };
 
